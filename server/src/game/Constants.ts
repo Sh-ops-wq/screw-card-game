@@ -3,7 +3,6 @@ export const MAX_PLAYERS = 6;
 export const DISCONNECT_GRACE_MS = 2 * 60 * 1000;
 export const SCREW_UNLOCK_SECONDS = 600;
 export const SCREW_UNLOCK_MS = SCREW_UNLOCK_SECONDS * 1000;
-export const FINAL_ROUND_INCLUDE_CALLER = false;
 export const START_WITH_HOST = true;
 export const ALLOW_MATCH_DISCARD = true;
 export const WRONG_MATCH_PENALTY_POINTS = 10;

@@ -28,19 +28,24 @@ type TranslationKey =
   | 'keep'
   | 'language'
   | 'log'
+  | 'matchChampion'
+  | 'matchStandings'
   | 'nextTurn'
   | 'nickname'
   | 'optionalMoves'
   | 'playAgain'
   | 'players'
   | 'privateTable'
+  | 'raceToNWins'
   | 'reserved'
   | 'roomCode'
+  | 'roundClosedByScrew'
   | 'roundComplete'
   | 'scoreboard'
   | 'send'
   | 'sound'
   | 'stats'
+  | 'thiefDisabled'
   | 'startGame'
   | 'takeFromGround'
   | 'turn'
@@ -82,19 +87,24 @@ const dictionary: Record<Language, Record<TranslationKey, string>> = {
     keep: 'Keep',
     language: 'Language',
     log: 'Log',
+    matchChampion: 'Match champion',
+    matchStandings: 'Match standings',
     nextTurn: 'Next turn',
     nickname: 'Nickname',
     optionalMoves: 'Optional moves',
     playAgain: 'Play Again',
     players: 'players',
     privateTable: 'Private Table',
+    raceToNWins: 'First to {n} round wins takes the match',
     reserved: 'Reserved',
     roomCode: 'Room Code',
+    roundClosedByScrew: 'Round sealed by Screw',
     roundComplete: 'Round Complete',
     scoreboard: 'Scoreboard',
     send: 'Send',
     sound: 'Sound',
     stats: 'Stats',
+    thiefDisabled: 'Thief cannot fire anymore — Screw now ends the round immediately.',
     startGame: 'Start Game',
     takeFromGround: 'Take from Ground',
     turn: 'Turn',
@@ -133,19 +143,24 @@ const dictionary: Record<Language, Record<TranslationKey, string>> = {
     keep: 'احتفظ',
     language: 'اللغة',
     log: 'اللوج',
+    matchChampion: 'بطل الماتش',
+    matchStandings: 'ترتيب الماتش',
     nextTurn: 'الدور الجاي',
     nickname: 'اسمك',
     optionalMoves: 'حركات اختيارية',
     playAgain: 'العب تاني',
     players: 'لاعيبة',
     privateTable: 'ترابيزة خاصة',
+    raceToNWins: 'أول واحد يوصل لـ {n} جولة يكسب الماتش',
     reserved: 'محجوز',
     roomCode: 'كود الروم',
+    roundClosedByScrew: 'الجولة اتقفلت بالسكرو',
     roundComplete: 'الجولة خلصت',
     scoreboard: 'النتيجة',
     send: 'ابعت',
     sound: 'الصوت',
     stats: 'الإحصائيات',
+    thiefDisabled: 'حركة اللص مش شغالة هنا لأن السكرو بيقفل الجولة على طول.',
     startGame: 'ابدأ اللعبة',
     takeFromGround: 'خد من الأرض',
     turn: 'الدور',
@@ -159,8 +174,8 @@ const dictionary: Record<Language, Record<TranslationKey, string>> = {
 };
 
 export const reactions: Record<Language, string[]> = {
-  en: ['Smart move!', 'Clean swap!', 'Big brain play!', 'Nice memory!', 'You cooked!'],
-  ar: ['حركة نضيفة!', 'لعبتها صح!', 'دماغ عالية!', 'جامدة يا نجم!', 'كده أنت بتطبخ!']
+  en: ['Clean swap.', 'Sharp.'],
+  ar: ['لعبتهالها صح.', 'شاطر.']
 };
 
 export function getT(language: Language): TFunction {

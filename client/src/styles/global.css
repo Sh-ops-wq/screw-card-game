@@ -829,6 +829,47 @@ input:focus {
   color: #fff6dc;
 }
 
+.score-match-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 0;
+  color: #f4dfb2;
+}
+
+.score-race-caption {
+  margin: 8px 0 0;
+  font-size: 0.92rem;
+  color: rgba(255, 250, 223, 0.78);
+}
+
+.match-standings {
+  margin: 14px 0 18px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+}
+
+.match-standings__list {
+  margin: 10px 0 0;
+  padding-inline-start: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  list-style: decimal;
+}
+
+.match-standings__list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding-inline-end: 4px;
+}
+
+.match-standings__list strong {
+  font-variant-numeric: tabular-nums;
+}
+
 .score-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

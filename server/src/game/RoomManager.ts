@@ -1,4 +1,5 @@
 import { randomBytes, randomUUID } from 'node:crypto';
+import { BOT_PREFILL_TABLE_SIZE } from '../../../shared/gameConfig';
 import { DISCONNECT_GRACE_MS, MAX_PLAYERS, MIN_PLAYERS, TURN_TIMEOUT_MS, TURN_TRANSITION_DELAY_MS } from './Constants';
 import type { GameRoom, ServerPlayer } from './Types';
 
@@ -27,7 +28,9 @@ export class RoomManager {
       hostId: playerId,
       players: [player],
       chatMessages: [],
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      matchWins: {},
+      pendingMatchReset: false
     };
 
     this.rooms.set(roomCode, room);
@@ -82,14 +85,15 @@ export class RoomManager {
     if (room.hostId !== hostId) {
       throw new Error('Only the host can add bots.');
     }
-    if (room.game && room.game.phase !== 'lobby') {
-      throw new Error('Bots can only be added before the round starts.');
+    if (room.game) {
+      throw new Error('Bots can only be added before anyone starts the first round.');
     }
     if (room.players.length >= MAX_PLAYERS) {
       throw new Error('This room is already full.');
     }
 
-    const needed = Math.max(0, MIN_PLAYERS - room.players.length);
+    const targetSeatCount = Math.min(Math.max(MIN_PLAYERS, BOT_PREFILL_TABLE_SIZE), MAX_PLAYERS);
+    const needed = Math.max(0, targetSeatCount - room.players.length);
     for (let index = 0; index < needed; index += 1) {
       const usedNames = new Set(room.players.map((player) => player.nickname));
       const name = this.botNames.find((candidate) => !usedNames.has(candidate)) ?? `Bot ${room.players.length + 1}`;

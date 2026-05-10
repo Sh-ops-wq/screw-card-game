@@ -1,3 +1,4 @@
+import { BOT_PREFILL_TABLE_SIZE } from '../../../shared/gameConfig';
 import { MAX_PLAYERS, MIN_PLAYERS, TURN_TRANSITION_DELAY_MS } from './Constants';
 import { toPublicCard } from './CardDefs';
 import { DeckService } from './DeckService';
@@ -13,6 +14,7 @@ export class VisibilityService {
       phase: room.game?.phase ?? 'lobby',
       minPlayers: MIN_PLAYERS,
       maxPlayers: MAX_PLAYERS,
+      botPrefillTarget: BOT_PREFILL_TABLE_SIZE,
       players: VisibilityService.publicPlayers(room),
       chatMessages: room.chatMessages.slice(-50),
       inviteUrl

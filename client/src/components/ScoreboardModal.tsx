@@ -17,6 +17,9 @@ export function ScoreboardModal({ payload, onClose, onRestart, canRestart, t }: 
   }
 
   const winner = payload.scores.find((score) => score.playerId === payload.winnerId);
+  const champ = payload.matchWinnerId ? payload.matchStanding?.find((line) => line.playerId === payload.matchWinnerId) : undefined;
+  const raceLine =
+    typeof payload.roundsToWin === 'number' ? t('raceToNWins').replace('{n}', String(payload.roundsToWin)) : null;
 
   return (
     <div className="modal-shell" role="dialog" aria-modal="true">
@@ -27,11 +30,31 @@ export function ScoreboardModal({ payload, onClose, onRestart, canRestart, t }: 
             <h2>
               <Trophy size={26} /> {t('winner')}: {winner?.nickname ?? t('winner')}
             </h2>
+            {payload.matchWinnerId && champ ? (
+              <p className="score-match-banner">
+                <Trophy size={18} /> {t('matchChampion')}: {champ.nickname}
+              </p>
+            ) : null}
+            {raceLine ? <p className="score-race-caption">{raceLine}</p> : null}
           </div>
           <button className="icon-button" type="button" onClick={onClose} aria-label="Close scoreboard">
             <X size={20} />
           </button>
         </div>
+
+        {payload.matchStanding && payload.matchStanding.length > 0 ? (
+          <div className="match-standings">
+            <p className="eyebrow">{t('matchStandings')}</p>
+            <ol className="match-standings__list">
+              {payload.matchStanding.map((line) => (
+                <li key={line.playerId}>
+                  <span>{line.nickname}</span>
+                  <strong>{line.wins}</strong>
+                </li>
+              ))}
+            </ol>
+          </div>
+        ) : null}
 
         <div className="score-grid">
           {payload.scores

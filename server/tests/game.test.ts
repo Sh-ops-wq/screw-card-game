@@ -98,20 +98,13 @@ describe('Screw game engine', () => {
     expect(CARD_DEF_BY_ID.screw.value).toBe(35);
   });
 
-  it('Thief swaps hands and changes the screw caller after Screw', () => {
+  it('calling Screw seals the round for everyone instantly', () => {
     const room = startReadyRound(4, 1000);
     const caller = room.players[0].id;
-    const thiefPlayer = room.players[1].id;
-    room.game!.playerStates[caller].hand = [card('card_10')];
-    room.game!.playerStates[thiefPlayer].hand = [card('thief'), card('card_1')];
-
-    games.callScrew(room.code, caller, 1000 + 600_000);
-    setCurrent(room, thiefPlayer);
-    games.playThief(room.code, thiefPlayer);
-
-    expect(room.game!.screwCallerId).toBe(thiefPlayer);
-    expect(room.game!.playerStates[thiefPlayer].hand.map((item) => item.defId)).toEqual(['card_10']);
-    expect(room.game!.playerStates[caller].hand.map((item) => item.defId)).toEqual(['card_1']);
+    const result = games.callScrew(room.code, caller, 1000 + 600_000);
+    expect(room.game!.phase).toBe('roundEnded');
+    expect(result.roundEnded?.scores.length).toBe(4);
+    expect(room.game!.screwCallerId).toBe(caller);
   });
 
   it('See & Swap allows only one swap', () => {
@@ -193,19 +186,17 @@ describe('Screw game engine', () => {
     expect(TurnService.isScrewUnlocked(room, 10_000 + 600_000)).toBe(true);
   });
 
-  it('ends the final round after every other player gets one turn', () => {
-    const room = startReadyRound(4, 1000);
-    games.callScrew(room.code, room.players[0].id, 1000 + 600_000);
+  it('queues a bracket reset once a player banks five cumulative round trophies', () => {
+    const room = startReadyRound(2);
+    const champ = room.players[0].id;
+    room.matchWins[champ] = 4;
+    room.game!.playerStates[champ].hand = [card('minus_1'), card('minus_1'), card('minus_1'), card('screw_driver')];
+    room.game!.playerStates[room.players[1].id].hand = [card('plus_20'), card('plus_20'), card('plus_20'), card('screw')];
 
-    while (room.game!.phase !== 'roundEnded') {
-      const current = TurnService.currentPlayerId(room)!;
-      room.game!.turnReadyAt = 0;
-      games.drawCard(room.code, current);
-      games.discardDrawnCard(room.code, current);
-    }
+    games.finishRound(room);
 
-    expect(room.game!.scores).toHaveLength(4);
-    expect(room.game!.phase).toBe('roundEnded');
+    expect(room.matchWins[champ]).toBe(5);
+    expect(room.pendingMatchReset).toBe(true);
   });
 
   it('skips and warns a player after turn timeout', () => {
@@ -266,9 +257,21 @@ describe('Screw game engine', () => {
     const room = rooms.createRoom('P1', 's1');
     rooms.fillWithBots(room.code, room.hostId);
 
-    expect(room.players).toHaveLength(2);
-    expect(room.players.filter((player) => player.isBot)).toHaveLength(1);
+    expect(room.players).toHaveLength(4);
+    expect(room.players.filter((player) => player.isBot)).toHaveLength(3);
     expect(() => games.startGame(room.code, room.hostId)).not.toThrow();
+  });
+
+  it('drops match standings once the bracket is over and host restarts', () => {
+    const room = startReadyRound(2);
+    room.matchWins[room.players[0].id] = 5;
+    room.pendingMatchReset = true;
+
+    games.restartRound(room.code, room.hostId);
+
+    expect(room.matchWins).toEqual({});
+    expect(room.pendingMatchReset).toBe(false);
+    expect(room.game?.phase).toBe('initialPeek');
   });
 
   it('never leaks hidden cards in public game state', () => {

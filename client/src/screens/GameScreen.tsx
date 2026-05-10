@@ -94,8 +94,8 @@ export function GameScreen({
     }
 
     const worthyMove = /swapped|kept|Thief|Screw|Basra|Peek|matched|ground|wins/i.test(latest);
-    const readyForToast = Date.now() - lastReactionAt.current >= 8000;
-    if (!worthyMove || !readyForToast) {
+    const readyForToast = Date.now() - lastReactionAt.current >= 15000;
+    if (!worthyMove || !readyForToast || Math.random() > 0.18) {
       return;
     }
 
@@ -341,9 +341,9 @@ export function GameScreen({
               />
             ) : null}
 
-            {game.finalRound ? (
+            {game.finalRound && game.phase !== 'roundEnded' ? (
               <div className="final-round-banner table-final-banner">
-                <ShieldAlert size={18} /> Final round: {game.players.find((player) => player.id === game.screwCallerId)?.nickname ?? t('winner')}
+                <ShieldAlert size={18} /> {t('roundClosedByScrew')}: {game.players.find((player) => player.id === game.screwCallerId)?.nickname ?? t('winner')}
               </div>
             ) : null}
           </div>
@@ -463,7 +463,7 @@ function DrawnCardControls({
     );
   }
 
-  const actionReason = getActionReason(card, source, canAct, game);
+  const actionReason = getActionReason(card, source, canAct, game, t);
 
   return (
     <div className="drawn-floating">
@@ -589,15 +589,15 @@ function seatPosition(index: number, count: number): string {
   return (layouts[count] ?? layouts[5])[index] ?? 'top';
 }
 
-function getActionReason(card: PublicCard, source: 'deck' | 'ground' | null, canAct: boolean, game: PublicGameState): string | null {
+function getActionReason(card: PublicCard, source: 'deck' | 'ground' | null, canAct: boolean, _game: PublicGameState, t: TFunction): string | null {
   if (source !== 'deck') {
     return 'This card only works when drawn from deck.';
   }
   if (card.effectType === 'none') {
     return 'This card has no action.';
   }
-  if (card.effectType === 'thief' && !game.finalRound) {
-    return 'Thief only works after Screw.';
+  if (card.effectType === 'thief') {
+    return t('thiefDisabled');
   }
   if (!canAct) {
     return 'This action is not allowed now.';

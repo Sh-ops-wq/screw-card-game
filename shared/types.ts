@@ -54,6 +54,7 @@ export interface RoomState {
   phase: RoomPhase;
   minPlayers: number;
   maxPlayers: number;
+  botPrefillTarget: number;
   players: PublicPlayer[];
   chatMessages?: ChatMessage[];
   inviteUrl?: string;
@@ -133,6 +134,12 @@ export interface RoundEndedPayload {
   scores: ScoreLine[];
   winnerId: string;
   screwCallerId?: string;
+  /** Standings toward the overall match after this round resolves. */
+  matchStanding?: Array<{ playerId: string; nickname: string; wins: number }>;
+  /** How many round wins clinch the match (see shared/gameConfig.ts). */
+  roundsToWin?: number;
+  /** Present when someone reached roundsToWin. */
+  matchWinnerId?: string;
 }
 
 export interface ActionPrompt {

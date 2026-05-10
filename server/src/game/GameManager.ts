@@ -1,3 +1,4 @@
+import { MATCH_ROUND_WINS_TO_WIN } from '../../../shared/gameConfig';
 import { randomInt } from 'node:crypto';
 import {
   ALLOW_MATCH_DISCARD,
@@ -229,10 +230,7 @@ export class GameManager {
     }
     TurnService.assertTurnReady(room);
     TurnService.callScrew(room, playerId, now);
-    if (room.game?.phase === 'roundEnded') {
-      return this.finishRound(room);
-    }
-    return { room };
+    return this.finishRound(room);
   }
 
   playThief(roomCode: string, playerId: string): EngineResult {
@@ -243,6 +241,11 @@ export class GameManager {
   }
 
   restartRound(roomCode: string, hostId: string): EngineResult {
+    const room = this.roomManager.requireRoom(roomCode);
+    if (room.pendingMatchReset) {
+      room.matchWins = {};
+      room.pendingMatchReset = false;
+    }
     return this.startGame(roomCode, hostId);
   }
 
@@ -337,7 +340,25 @@ export class GameManager {
     const winner = scores.find((score) => score.isWinner);
     game.phase = 'roundEnded';
     game.scores = scores;
-    game.winnerId = winner?.playerId;
+    const roundWinnerId = winner?.playerId ?? scores[0]?.playerId;
+    game.winnerId = roundWinnerId;
+
+    const prior = room.matchWins[roundWinnerId] ?? 0;
+    room.matchWins[roundWinnerId] = prior + 1;
+    let matchWinnerId: string | undefined;
+    if (room.matchWins[roundWinnerId] >= MATCH_ROUND_WINS_TO_WIN) {
+      matchWinnerId = roundWinnerId;
+      room.pendingMatchReset = true;
+    }
+
+    const matchStanding = room.players
+      .map((player) => ({
+        playerId: player.id,
+        nickname: player.nickname,
+        wins: room.matchWins[player.id] ?? 0
+      }))
+      .sort((a, b) => b.wins - a.wins || a.nickname.localeCompare(b.nickname));
+
     game.drawnCard = undefined;
     game.pendingAction = undefined;
     game.log.push(`${winner?.nickname ?? 'A player'} wins the round.`);
@@ -345,8 +366,11 @@ export class GameManager {
       room,
       roundEnded: {
         scores,
-        winnerId: winner?.playerId ?? scores[0]?.playerId,
-        screwCallerId: game.screwCallerId
+        winnerId: roundWinnerId,
+        screwCallerId: game.screwCallerId,
+        matchStanding,
+        roundsToWin: MATCH_ROUND_WINS_TO_WIN,
+        matchWinnerId
       }
     };
   }

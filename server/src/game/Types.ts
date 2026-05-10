@@ -68,6 +68,10 @@ export interface GameRoom {
   game?: GameState;
   chatMessages: ChatMessage[];
   createdAt: number;
+  /** Cumulative round wins per player Id for best-of-N match play. */
+  matchWins: Record<string, number>;
+  /** When true, host's next Restart clears match standings (fresh bracket). */
+  pendingMatchReset: boolean;
 }
 
 export interface ActionResult {

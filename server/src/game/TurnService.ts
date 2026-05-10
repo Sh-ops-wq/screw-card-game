@@ -1,4 +1,4 @@
-import { FINAL_ROUND_INCLUDE_CALLER, SCREW_UNLOCK_MS, TURN_TIMEOUT_MS, TURN_TRANSITION_DELAY_MS } from './Constants';
+import { SCREW_UNLOCK_MS, TURN_TIMEOUT_MS, TURN_TRANSITION_DELAY_MS } from './Constants';
 import type { GameRoom } from './Types';
 
 export class TurnService {
@@ -31,6 +31,10 @@ export class TurnService {
     return Boolean(room.game && now >= room.game.screwUnlockAt);
   }
 
+  /**
+   * Instantly ends play for everyone once Screw unlocks — score from boards as-is.
+   * (No extra "closing lap" turns; callers wanted the round to slam shut.)
+   */
   static callScrew(room: GameRoom, callerId: string, now = Date.now()): void {
     const game = TurnService.requireGame(room);
     if (game.finalRound) {
@@ -45,26 +49,30 @@ export class TurnService {
       throw new Error('Caller is not in this round.');
     }
 
-    const afterCaller = [
-      ...game.turnOrder.slice(callerIndex + 1),
-      ...game.turnOrder.slice(0, callerIndex)
-    ];
+    TurnService.discardOpenTurnCards(room);
 
     game.finalRound = true;
     game.screwCallerId = callerId;
-    game.finalTurnQueue = FINAL_ROUND_INCLUDE_CALLER ? [...afterCaller, callerId] : afterCaller;
-    game.log.push(`${room.players.find((player) => player.id === callerId)?.nickname ?? 'A player'} called Screw.`);
+    game.finalTurnQueue = [];
 
-    if (game.finalTurnQueue.length === 0) {
-      game.phase = 'roundEnded';
-      return;
-    }
-
-    game.currentTurnIndex = game.turnOrder.indexOf(game.finalTurnQueue[0]);
-    game.turnReadyAt = now + TURN_TRANSITION_DELAY_MS;
-    game.turnExpiresAt = game.turnReadyAt + TURN_TIMEOUT_MS;
+    const name = room.players.find((player) => player.id === callerId)?.nickname ?? 'A player';
+    game.log.push(`${name} called Screw — round ends now for everyone.`);
     game.drawnCard = undefined;
     game.pendingAction = undefined;
+    game.phase = 'playing';
+  }
+
+  /** Bury any unresolved draw/action so scoring uses stable hands-only state. */
+  static discardOpenTurnCards(room: GameRoom): void {
+    const game = TurnService.requireGame(room);
+    if (game.drawnCard) {
+      game.discardPile.push(game.drawnCard.card);
+    }
+    game.drawnCard = undefined;
+    if (game.pendingAction) {
+      game.discardPile.push(game.pendingAction.actionCard);
+      game.pendingAction = undefined;
+    }
     game.phase = 'playing';
   }
 

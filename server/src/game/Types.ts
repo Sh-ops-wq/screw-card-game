@@ -1,4 +1,4 @@
-import type { ActionPrompt, PublicCard, RoomPhase, ScoreLine } from '../../../shared/types';
+import type { ActionPrompt, ChatMessage, PublicCard, RoomPhase, ScoreLine } from '../../../shared/types';
 
 export interface CardInstance {
   instanceId: string;
@@ -14,6 +14,8 @@ export interface ServerPlayer {
   disconnectedAt?: number;
   isHost: boolean;
   penaltyPoints: number;
+  warningCount: number;
+  timeoutCount: number;
   initialPeekDone: boolean;
 }
 
@@ -45,6 +47,7 @@ export interface GameState {
   turnOrder: string[];
   currentTurnIndex: number;
   turnReadyAt: number;
+  turnExpiresAt: number;
   roundStartedAt: number;
   screwUnlockAt: number;
   finalRound: boolean;
@@ -63,6 +66,7 @@ export interface GameRoom {
   hostId: string;
   players: ServerPlayer[];
   game?: GameState;
+  chatMessages: ChatMessage[];
   createdAt: number;
 }
 

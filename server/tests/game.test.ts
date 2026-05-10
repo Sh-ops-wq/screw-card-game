@@ -29,9 +29,9 @@ describe('Screw game engine', () => {
     }
   });
 
-  it('does not start with less than 4 or more than 6 players', () => {
-    const room = createRoom(3);
-    expect(() => games.startGame(room.code, room.hostId)).toThrow(/4 to 6/);
+  it('does not start with less than 2 or more than 6 players', () => {
+    const room = createRoom(1);
+    expect(() => games.startGame(room.code, room.hostId)).toThrow(/2 to 6/);
 
     const fullRoom = createRoom(6);
     expect(() => rooms.joinRoom(fullRoom.code, 'Seven', 's7')).toThrow(/full/);
@@ -42,6 +42,12 @@ describe('Screw game engine', () => {
     for (const player of room.players) {
       expect(room.game!.playerStates[player.id].hand).toHaveLength(4);
     }
+  });
+
+  it('starts with 2 players', () => {
+    const room = startReadyRound(2);
+    expect(room.players).toHaveLength(2);
+    expect(room.game!.phase).toBe('playing');
   });
 
   it('initial peek reveals exactly 2 cards to the choosing player', () => {
@@ -202,6 +208,16 @@ describe('Screw game engine', () => {
     expect(room.game!.phase).toBe('roundEnded');
   });
 
+  it('skips and warns a player after turn timeout', () => {
+    const room = startReadyRound(2, 1000);
+    const player = TurnService.currentPlayerId(room)!;
+    room.game!.turnExpiresAt = 1000;
+    const result = games.handleTurnTimeout(room.code, player, 2000);
+    expect(room.players.find((candidate) => candidate.id === player)?.warningCount).toBe(1);
+    expect(TurnService.currentPlayerId(room)).not.toBe(player);
+    expect(result.room.game!.phase).toBe('playing');
+  });
+
   it('calculates scores correctly', () => {
     const room = startReadyRound();
     const player = room.players[0].id;
@@ -211,7 +227,7 @@ describe('Screw game engine', () => {
     expect(score.total).toBe(20);
   });
 
-  it('applies +10 when a match discard guess is wrong', () => {
+  it('warns before punishing a wrong match discard guess', () => {
     const room = startReadyRound();
     const player = room.players[0].id;
     room.game!.discardPile = [card('card_5')];
@@ -219,6 +235,10 @@ describe('Screw game engine', () => {
 
     games.matchDiscard(room.code, player, 0);
 
+    expect(room.players[0].warningCount).toBe(1);
+    expect(room.players[0].penaltyPoints).toBe(0);
+    games.matchDiscard(room.code, player, 0);
+    expect(room.players[0].warningCount).toBe(2);
     expect(room.players[0].penaltyPoints).toBe(10);
     expect(room.game!.playerStates[player].hand).toHaveLength(4);
   });
@@ -246,8 +266,8 @@ describe('Screw game engine', () => {
     const room = rooms.createRoom('P1', 's1');
     rooms.fillWithBots(room.code, room.hostId);
 
-    expect(room.players).toHaveLength(4);
-    expect(room.players.filter((player) => player.isBot)).toHaveLength(3);
+    expect(room.players).toHaveLength(2);
+    expect(room.players.filter((player) => player.isBot)).toHaveLength(1);
     expect(() => games.startGame(room.code, room.hostId)).not.toThrow();
   });
 

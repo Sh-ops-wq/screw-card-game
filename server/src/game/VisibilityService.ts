@@ -14,6 +14,7 @@ export class VisibilityService {
       minPlayers: MIN_PLAYERS,
       maxPlayers: MAX_PLAYERS,
       players: VisibilityService.publicPlayers(room),
+      chatMessages: room.chatMessages.slice(-50),
       inviteUrl
     };
   }
@@ -26,6 +27,7 @@ export class VisibilityService {
       ...VisibilityService.roomState(room, inviteUrl),
       currentPlayerId: game ? TurnService.currentPlayerId(room) : undefined,
       turnReadyAt: game?.turnReadyAt,
+      turnExpiresAt: game?.turnExpiresAt,
       turnTransitionDelayMs: game ? TURN_TRANSITION_DELAY_MS : undefined,
       roundStartedAt: game?.roundStartedAt,
       screwUnlockAt: game?.screwUnlockAt,
@@ -80,6 +82,7 @@ export class VisibilityService {
       connected: player.connected,
       handSize: room.game?.playerStates[player.id]?.hand.length ?? 0,
       penaltyPoints: player.penaltyPoints,
+      warningCount: player.warningCount,
       initialPeekDone: player.initialPeekDone,
       seatIndex
     }));

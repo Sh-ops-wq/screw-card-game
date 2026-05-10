@@ -44,7 +44,9 @@ export function ScoreboardModal({ payload, onClose, onRestart, canRestart, t }: 
                   <span>{score.total} pts</span>
                 </div>
                 <div className="score-line__meta">
-                  {score.isScrewCaller ? 'Screw caller' : 'Player'} {score.penaltyPoints ? `+ ${score.penaltyPoints} penalty` : ''}
+                  {score.isScrewCaller ? 'Screw caller' : 'Player'} · {t('stats')}: {score.cards.length} cards
+                  {score.penaltyPoints ? ` · +${score.penaltyPoints} penalty` : ''}
+                  {score.warningCount ? ` · ${score.warningCount} ${t('warnings')}` : ''}
                 </div>
                 <div className="score-cards">
                   {score.cards.map((card, index) => (

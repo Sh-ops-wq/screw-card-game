@@ -1558,6 +1558,24 @@ input:focus {
   box-shadow: 0 0 0 3px rgba(244, 201, 107, 0.24), 0 0 24px rgba(244, 201, 107, 0.18), 0 16px 34px rgba(0, 0, 0, 0.34);
 }
 
+.game-table-screen .card-image.is-hidden-card::after {
+  content: "سكرو";
+  position: absolute;
+  left: 50%;
+  bottom: 9%;
+  z-index: 2;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: #fff8df;
+  background: rgba(18, 7, 34, 0.52);
+  box-shadow: 0 0 14px rgba(244, 201, 107, 0.22);
+  transform: translateX(-50%);
+  font-size: clamp(0.62rem, 1.1vw, 0.84rem);
+  font-weight: 900;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+
 @media (max-width: 1300px), (max-height: 780px) {
   .game-table-screen {
     min-height: 0;
@@ -2139,5 +2157,237 @@ input:focus {
 
   .game-table-screen .card-image--large {
     width: 120px;
+  }
+}
+
+.table-hud {
+  grid-template-columns: minmax(180px, auto) 126px minmax(150px, auto) minmax(220px, 1fr) auto;
+}
+
+.hud-pill em {
+  min-width: 34px;
+  min-height: 26px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  color: #241222;
+  background: #f4c96b;
+  font-size: 0.78rem;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.screw-word-pill {
+  justify-content: center;
+  border-color: rgba(244, 201, 107, 0.3);
+}
+
+.screw-word-pill strong {
+  color: #fff8df;
+  text-shadow: 0 0 16px rgba(244, 201, 107, 0.28);
+}
+
+.table-state b {
+  margin-top: 4px;
+  color: #f4c96b;
+  font-size: 1.45rem;
+  line-height: 1;
+  text-shadow: 0 0 18px rgba(244, 201, 107, 0.38);
+}
+
+.table-seat-name small,
+.player-hand-title em {
+  color: #ffdc74;
+  font-size: 0.78rem;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.reaction-rail {
+  display: flex;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid rgba(255, 221, 137, 0.1);
+  border-radius: 999px;
+  background: rgba(12, 5, 26, 0.58);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
+  backdrop-filter: blur(12px);
+}
+
+.reaction-rail button {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  transition: transform 150ms ease, background 150ms ease;
+}
+
+.reaction-rail button:hover {
+  transform: translateY(-2px) scale(1.08);
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.reaction-pop {
+  position: absolute;
+  left: 50%;
+  top: -12px;
+  z-index: 8;
+  font-size: 2rem;
+  filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.45));
+  transform: translateX(-50%);
+  animation: reactionFloat 4s ease-out forwards;
+  pointer-events: none;
+}
+
+.reaction-pop--me {
+  position: fixed;
+  left: 50%;
+  top: auto;
+  bottom: 174px;
+}
+
+.chat-panel {
+  width: min(390px, 36vw);
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid rgba(255, 221, 137, 0.12);
+  border-radius: 8px;
+  background: rgba(12, 5, 26, 0.76);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(14px);
+}
+
+.chat-messages {
+  max-height: 170px;
+  overflow: auto;
+  display: grid;
+  gap: 7px;
+}
+
+.chat-messages p {
+  margin: 0;
+  color: #e4d8f0;
+  font-size: 0.84rem;
+  line-height: 1.35;
+}
+
+.chat-messages strong {
+  color: #f4c96b;
+}
+
+.chat-compose {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.chat-compose input {
+  height: 38px;
+}
+
+.chat-compose button {
+  min-height: 38px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 7px;
+  color: #241222;
+  background: #f4c96b;
+  font-weight: 900;
+}
+
+@keyframes reactionFloat {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(10px) scale(0.82);
+  }
+  12% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1.08);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-46px) scale(1);
+  }
+}
+
+@media (max-width: 900px) {
+  html,
+  body,
+  #root {
+    min-width: 0;
+  }
+
+  .game-table-screen {
+    min-width: 0;
+    min-height: 0;
+    grid-template-rows: auto minmax(0, 1fr);
+    padding: 8px;
+  }
+
+  .table-hud {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .hud-pill,
+  .hud-actions {
+    min-height: 40px;
+    font-size: 0.82rem;
+  }
+
+  .card-table-stage {
+    grid-template-rows: minmax(0, 1fr) 142px;
+  }
+
+  .felt-table::before {
+    inset: 88px 26px 20px;
+  }
+
+  .table-seat--left,
+  .table-seat--right {
+    display: none;
+  }
+
+  .center-piles {
+    gap: 22px;
+  }
+
+  .drawn-floating {
+    right: 12px;
+    bottom: 132px;
+  }
+
+  .player-hand-bar {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    padding: 6px;
+  }
+
+  .player-hand-title,
+  .table-hint {
+    display: none;
+  }
+
+  .player-hand-cards {
+    gap: 8px;
+  }
+
+  .game-table-screen .card-image--large {
+    width: 82px;
+  }
+
+  .game-table-screen .card-image--medium {
+    width: 96px;
+  }
+
+  .table-log-shell {
+    left: 8px;
+    bottom: 150px;
+  }
+
+  .chat-panel {
+    width: min(340px, 86vw);
   }
 }

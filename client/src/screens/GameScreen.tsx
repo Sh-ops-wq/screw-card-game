@@ -1,7 +1,7 @@
 import { Clock, Copy, Languages, ShieldAlert, Swords, Volume2, VolumeX } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { Socket } from 'socket.io-client';
-import type { ActionPrompt, PrivatePlayerState, PublicCard, PublicGameState, PublicPlayer, RoundEndedPayload } from '../../../shared/types';
+import type { ActionPrompt, EmojiReaction, PrivatePlayerState, PublicCard, PublicGameState, PublicPlayer, RoundEndedPayload } from '../../../shared/types';
 import { revealKey } from '../App';
 import { CardImage } from '../components/CardImage';
 import { ScoreboardModal } from '../components/ScoreboardModal';
@@ -15,6 +15,7 @@ interface GameScreenProps {
   privateState: PrivatePlayerState;
   reveals: Record<string, { card: PublicCard; expiresAt: number }>;
   prompt: ActionPrompt | null;
+  emojiReactions: EmojiReaction[];
   roundEnded: RoundEndedPayload | null;
   language: Language;
   t: TFunction;
@@ -33,6 +34,7 @@ export function GameScreen({
   privateState,
   reveals,
   prompt,
+  emojiReactions,
   roundEnded,
   language,
   t,
@@ -46,6 +48,8 @@ export function GameScreen({
   const [initialPeek, setInitialPeek] = useState<number[]>([]);
   const [peekAroundSelection, setPeekAroundSelection] = useState<number[]>([]);
   const [logOpen, setLogOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatDraft, setChatDraft] = useState('');
   const [reactionMessage, setReactionMessage] = useState<string | null>(null);
   const lastTurnSignal = useRef<string>('');
   const lastReactionAt = useRef(0);
@@ -116,6 +120,7 @@ export function GameScreen({
   const canDraw = privateState.canDraw || canStartTurn;
   const canTakeGround = privateState.canTakeGround || (canStartTurn && Boolean(game.discardTop));
   const canCallScrew = privateState.canCallScrew || (game.phase === 'playing' && !isTurnTransitioning && !game.finalRound && now >= (game.screwUnlockAt ?? Number.POSITIVE_INFINITY));
+  const turnSecondsLeft = game.turnExpiresAt && game.phase !== 'roundEnded' ? Math.max(0, Math.ceil((game.turnExpiresAt - now) / 1000)) : 0;
 
   const handCards = privateState.hand.map((slot) => ({
     ...slot,
@@ -180,6 +185,13 @@ export function GameScreen({
         }
         return next;
       });
+      return;
+    }
+
+    if (!privateState.drawnCard && !prompt && game.phase === 'playing') {
+      socket.emit('matchDiscard', { cardIndex: index });
+      playSound('button');
+      return;
     }
   }
 
@@ -204,6 +216,21 @@ export function GameScreen({
     playSound('button');
   }
 
+  function sendChat() {
+    const message = chatDraft.trim();
+    if (!message) {
+      return;
+    }
+    socket.emit('sendChat', { message });
+    setChatDraft('');
+    playSound('button');
+  }
+
+  function sendReaction(emoji: string) {
+    socket.emit('sendReaction', { emoji });
+    playSound('button');
+  }
+
   return (
     <main className="game-table-screen" dir={language === 'ar' ? 'rtl' : 'ltr'}>
       <header className="table-hud">
@@ -218,9 +245,13 @@ export function GameScreen({
           <Clock size={16} />
           <strong>{game.screwUnlocked ? 'Screw' : formatTime(screwSeconds)}</strong>
         </div>
+        <div className="hud-pill screw-word-pill">
+          <strong>SCREW / سكرو</strong>
+        </div>
         <div className={isMyTurn ? 'hud-pill hud-pill--turn' : 'hud-pill'}>
           <span>{isMyTurn ? t('yourTurn') : t('turn')}</span>
           <strong>{currentPlayer?.nickname ?? t('waiting')}</strong>
+          {turnSecondsLeft ? <em>{turnSecondsLeft}s</em> : null}
         </div>
         <div className="hud-actions">
           <button className="hud-icon" type="button" onClick={() => onLanguageChange(language === 'en' ? 'ar' : 'en')} aria-label={t('language')}>
@@ -248,6 +279,7 @@ export function GameScreen({
               reveals={reveals}
               onCardClick={handleOtherCard}
               t={t}
+              reactions={emojiReactions.filter((reaction) => reaction.playerId === player.id)}
             />
           ))}
 
@@ -255,6 +287,7 @@ export function GameScreen({
             <div className="table-state">
               <span>{isTurnTransitioning ? t('nextTurn') : phaseTitle(game.phase, isMyTurn, t)}</span>
               <strong>{currentPlayer?.nickname ?? t('waiting')}</strong>
+              <b>سكرو</b>
             </div>
 
             <div className="center-piles">
@@ -320,6 +353,7 @@ export function GameScreen({
           <div className="player-hand-title">
             <span>{t('yourHand')}</span>
             <strong>{me?.nickname ?? identity.nickname}</strong>
+            {me?.warningCount ? <em>{t('warnings')}: {me.warningCount}</em> : null}
           </div>
 
           <div className="player-hand-cards">
@@ -342,6 +376,40 @@ export function GameScreen({
         {reactionMessage ? <div className="fun-toast">{reactionMessage}</div> : null}
 
         <div className="table-log-shell">
+          <div className="reaction-rail">
+            {['🔥', '😂', '😈', '🧠', '👏', '💀', '👀', '⚡'].map((emoji) => (
+              <button key={emoji} type="button" onClick={() => sendReaction(emoji)}>{emoji}</button>
+            ))}
+          </div>
+          {emojiReactions.filter((reaction) => reaction.playerId === identity.playerId).map((reaction) => (
+            <div className="reaction-pop reaction-pop--me" key={reaction.id}>{reaction.emoji}</div>
+          ))}
+          <button className="log-toggle" type="button" onClick={() => setChatOpen((open) => !open)}>
+            {t('chat')}
+          </button>
+          {chatOpen ? (
+            <div className="chat-panel">
+              <div className="chat-messages">
+                {(game.chatMessages ?? []).slice(-8).map((message) => (
+                  <p key={message.id}><strong>{message.nickname}</strong> {message.message}</p>
+                ))}
+              </div>
+              <div className="chat-compose">
+                <input
+                  value={chatDraft}
+                  maxLength={160}
+                  onChange={(event) => setChatDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      sendChat();
+                    }
+                  }}
+                  placeholder={t('chat')}
+                />
+                <button type="button" onClick={sendChat}>{t('send')}</button>
+              </div>
+            </div>
+          ) : null}
           <button className="log-toggle" type="button" onClick={() => setLogOpen((open) => !open)}>
             {t('log')}
           </button>
@@ -476,7 +544,8 @@ function OpponentSeat({
   isCurrent,
   reveals,
   onCardClick,
-  t
+  t,
+  reactions
 }: {
   player: PublicPlayer;
   position: string;
@@ -484,6 +553,7 @@ function OpponentSeat({
   reveals: Record<string, { card: PublicCard; expiresAt: number }>;
   onCardClick: (playerId: string, cardIndex: number) => void;
   t: TFunction;
+  reactions: EmojiReaction[];
 }) {
   const vertical = position === 'left' || position === 'right';
 
@@ -492,7 +562,11 @@ function OpponentSeat({
       <div className="table-seat-name">
         <strong>{player.nickname}</strong>
         <span>{player.handSize}</span>
+        {player.warningCount ? <small>⚠ {player.warningCount}</small> : null}
       </div>
+      {reactions.map((reaction) => (
+        <div className="reaction-pop" key={reaction.id}>{reaction.emoji}</div>
+      ))}
       <div className="table-seat-cards">
         {Array.from({ length: player.handSize }, (_, index) => {
           const revealed = reveals[revealKey(player.id, index)]?.card;

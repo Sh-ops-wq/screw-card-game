@@ -1,4 +1,4 @@
-import { FINAL_ROUND_INCLUDE_CALLER, SCREW_UNLOCK_MS, TURN_TRANSITION_DELAY_MS } from './Constants';
+import { FINAL_ROUND_INCLUDE_CALLER, SCREW_UNLOCK_MS, TURN_TIMEOUT_MS, TURN_TRANSITION_DELAY_MS } from './Constants';
 import type { GameRoom } from './Types';
 
 export class TurnService {
@@ -62,6 +62,7 @@ export class TurnService {
 
     game.currentTurnIndex = game.turnOrder.indexOf(game.finalTurnQueue[0]);
     game.turnReadyAt = now + TURN_TRANSITION_DELAY_MS;
+    game.turnExpiresAt = game.turnReadyAt + TURN_TIMEOUT_MS;
     game.drawnCard = undefined;
     game.pendingAction = undefined;
     game.phase = 'playing';
@@ -87,12 +88,14 @@ export class TurnService {
 
       game.currentTurnIndex = game.turnOrder.indexOf(game.finalTurnQueue[0]);
       game.turnReadyAt = Date.now() + TURN_TRANSITION_DELAY_MS;
+      game.turnExpiresAt = game.turnReadyAt + TURN_TIMEOUT_MS;
       game.phase = 'playing';
       return false;
     }
 
     game.currentTurnIndex = (game.currentTurnIndex + 1) % game.turnOrder.length;
     game.turnReadyAt = Date.now() + TURN_TRANSITION_DELAY_MS;
+    game.turnExpiresAt = game.turnReadyAt + TURN_TIMEOUT_MS;
     game.phase = 'playing';
     return false;
   }

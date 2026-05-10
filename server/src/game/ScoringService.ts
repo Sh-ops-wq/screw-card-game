@@ -19,6 +19,7 @@ export class ScoringService {
         nickname: player.nickname,
         total,
         penaltyPoints: player.penaltyPoints,
+        warningCount: player.warningCount,
         cards,
         isWinner: false,
         isScrewCaller: room.game!.screwCallerId === player.id

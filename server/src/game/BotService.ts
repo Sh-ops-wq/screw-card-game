@@ -100,9 +100,11 @@ export class BotService {
     }
 
     const groundCard = game.discardPile.at(-1);
-    if (groundCard && this.cardValue(groundCard) <= 4) {
+    const worstIndex = this.worstCardIndex(room, botId);
+    const worstValue = this.cardValue(game.playerStates[botId].hand[worstIndex]);
+    if (groundCard && (this.cardValue(groundCard) <= 4 || this.cardValue(groundCard) + 2 < worstValue)) {
       this.gameManager.takeGroundCard(room.code, botId);
-      return this.gameManager.keepDrawnCard(room.code, botId, this.worstCardIndex(room, botId));
+      return this.gameManager.keepDrawnCard(room.code, botId, worstIndex);
     }
 
     this.gameManager.drawCard(room.code, botId);
@@ -113,13 +115,16 @@ export class BotService {
 
     const def = DeckService.getDefinition(drawn);
     const drawnValue = def.value;
-    const worstValue = this.cardValue(game.playerStates[botId].hand[this.worstCardIndex(room, botId)]);
 
     if (drawn.defId === 'thief' && game.finalRound) {
       return this.gameManager.playThief(room.code, botId);
     }
 
-    if (drawnValue <= 3 || drawn.defId === 'screw_driver' || drawn.defId === 'minus_1' || drawnValue < worstValue) {
+    if (drawn.defId === 'screw' || drawn.defId === 'plus_20') {
+      return this.gameManager.discardDrawnCard(room.code, botId);
+    }
+
+    if (drawnValue <= 4 || drawn.defId === 'screw_driver' || drawn.defId === 'minus_1' || drawnValue + 1 < worstValue) {
       return this.gameManager.keepDrawnCard(room.code, botId, this.worstCardIndex(room, botId));
     }
 
@@ -134,6 +139,47 @@ export class BotService {
         this.gameManager.useDrawnCardAction(room.code, botId);
         return this.gameManager.chooseTargetCard(room.code, botId, target.id, 0);
       }
+    }
+
+    if (def.effectType === 'basra' && worstValue >= 8) {
+      this.gameManager.useDrawnCardAction(room.code, botId);
+      return this.gameManager.chooseOwnCard(room.code, botId, this.worstCardIndex(room, botId));
+    }
+
+    if (def.effectType === 'just_take' && game.playerStates[botId].hand.length > 2) {
+      const target = this.randomOpponent(room, botId);
+      if (target) {
+        this.gameManager.useDrawnCardAction(room.code, botId);
+        this.gameManager.chooseTargetPlayer(room.code, botId, target.id);
+        return this.gameManager.chooseOwnCard(room.code, botId, this.worstCardIndex(room, botId));
+      }
+    }
+
+    if (def.effectType === 'take_give') {
+      const target = this.randomOpponent(room, botId);
+      if (target && game.playerStates[target.id]?.hand.length) {
+        this.gameManager.useDrawnCardAction(room.code, botId);
+        this.gameManager.chooseTargetPlayer(room.code, botId, target.id);
+        this.gameManager.chooseTargetCard(room.code, botId, target.id, 0);
+        return this.gameManager.chooseOwnCard(room.code, botId, this.worstCardIndex(room, botId));
+      }
+    }
+
+    if (def.effectType === 'see_swap') {
+      const target = this.randomOpponent(room, botId);
+      if (target && game.playerStates[target.id]?.hand.length) {
+        this.gameManager.useDrawnCardAction(room.code, botId);
+        this.gameManager.chooseTargetCard(room.code, botId, target.id, 0);
+        return this.gameManager.confirmSwap(room.code, botId, { swap: true, targetPlayerId: target.id, targetCardIndex: 0, ownCardIndex: this.worstCardIndex(room, botId) });
+      }
+    }
+
+    if (def.effectType === 'peek_around') {
+      this.gameManager.useDrawnCardAction(room.code, botId);
+      if (game.playerStates[botId].hand.length >= 2) {
+        return this.gameManager.chooseActionOption(room.code, botId, { option: 'own', cardIndexes: [0, 1] });
+      }
+      return this.gameManager.chooseActionOption(room.code, botId, { option: 'others' });
     }
 
     return this.gameManager.discardDrawnCard(room.code, botId);
@@ -154,6 +200,11 @@ export class BotService {
 
   private cardValue(card: CardInstance): number {
     return DeckService.getDefinition(card).value;
+  }
+
+  private randomOpponent(room: GameRoom, playerId: string) {
+    const opponents = room.players.filter((player) => player.id !== playerId && (player.connected || player.isBot) && (room.game?.playerStates[player.id]?.hand.length ?? 0) > 0);
+    return opponents[Math.floor(Math.random() * opponents.length)];
   }
 
   private static randomThinkTime(): number {

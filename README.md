@@ -12,7 +12,7 @@ npm run dev
 Frontend: <http://localhost:5173>  
 Backend: <http://localhost:3001>
 
-Open the frontend in one to six desktop browser tabs or machines on the same network. Create a room, share the room code/link, enter nicknames, and start once 4 to 6 players are seated. A solo host can use "Fill empty seats with Bots" to test a full table.
+Open the frontend in one to six desktop browser tabs or machines on the same network. Create a room, share the room code/link, enter nicknames, and start once 2 to 6 players are seated. A solo host can use "Fill empty seats with Bots" to test a table.
 
 ## Tests
 

@@ -1,8 +1,11 @@
 import type { Server, Socket } from 'socket.io';
+import { randomUUID } from 'node:crypto';
 import { BotService } from './game/BotService';
 import { GameManager, type EngineResult } from './game/GameManager';
 import { RoomManager } from './game/RoomManager';
 import { VisibilityService } from './game/VisibilityService';
+import { TurnService } from './game/TurnService';
+import type { ChatMessage, EmojiReaction } from '../../shared/types';
 import type { GameRoom, ServerPlayer } from './game/Types';
 
 interface ClientSession {
@@ -13,6 +16,8 @@ interface ClientSession {
 const roomManager = new RoomManager();
 const gameManager = new GameManager(roomManager);
 const botService = new BotService(roomManager, gameManager);
+const turnTimeouts = new Map<string, NodeJS.Timeout>();
+const allowedReactions = new Set(['🔥', '😂', '😈', '🧠', '👏', '💀', '👀', '⚡']);
 
 export function registerSockets(io: Server): void {
   io.on('connection', (socket) => {
@@ -118,6 +123,47 @@ export function registerSockets(io: Server): void {
       emitResult(io, gameManager.matchDiscard(session.roomCode, session.playerId, payload.cardIndex), session.playerId, socket);
     }));
 
+    socket.on('illegalAttempt', safe(socket, (payload: { reason?: string }) => {
+      const session = requireSession(socket);
+      emitResult(io, gameManager.recordIllegalAttempt(session.roomCode, session.playerId, sanitizeShortText(payload.reason ?? 'made an illegal move.', 80)), session.playerId, socket);
+    }));
+
+    socket.on('sendChat', safe(socket, (payload: { message: string }) => {
+      const session = requireSession(socket);
+      const room = roomManager.requireRoom(session.roomCode);
+      const player = roomManager.requirePlayer(room, session.playerId);
+      const message = sanitizeShortText(payload.message, 160);
+      if (!message) {
+        throw new Error('Write a message first.');
+      }
+      const chat: ChatMessage = {
+        id: randomUUID(),
+        playerId: player.id,
+        nickname: player.nickname,
+        message,
+        createdAt: Date.now()
+      };
+      room.chatMessages.push(chat);
+      room.chatMessages = room.chatMessages.slice(-50);
+      io.to(room.code).emit('chatMessage', chat);
+      emitResult(io, { room }, player.id, socket);
+    }));
+
+    socket.on('sendReaction', safe(socket, (payload: { emoji: string }) => {
+      const session = requireSession(socket);
+      const room = roomManager.requireRoom(session.roomCode);
+      const player = roomManager.requirePlayer(room, session.playerId);
+      const emoji = allowedReactions.has(payload.emoji) ? payload.emoji : '👏';
+      const reaction: EmojiReaction = {
+        id: randomUUID(),
+        playerId: player.id,
+        nickname: player.nickname,
+        emoji,
+        createdAt: Date.now()
+      };
+      io.to(room.code).emit('playerReaction', reaction);
+    }));
+
     socket.on('kickPlayer', safe(socket, (payload: { targetPlayerId: string }) => {
       const session = requireSession(socket);
       const room = roomManager.kickPlayer(session.roomCode, session.playerId, payload.targetPlayerId);
@@ -127,7 +173,7 @@ export function registerSockets(io: Server): void {
     socket.on('disconnect', () => {
       const room = roomManager.disconnect(socket.id);
       if (room) {
-        emitResult(io, { room }, undefined, socket);
+        emitResult(io, gameManager.handleDisconnectState(room), undefined, socket);
       }
     });
   });
@@ -185,7 +231,34 @@ function emitResult(io: Server, result: EngineResult, actorId?: string, actorSoc
     io.to(room.code).emit('roundEnded', result.roundEnded);
   }
 
+  scheduleTurnTimeout(io, room);
   botService.schedule(room.code, (botResult, botActorId) => emitResult(io, botResult, botActorId));
+}
+
+function scheduleTurnTimeout(io: Server, room: GameRoom): void {
+  const existing = turnTimeouts.get(room.code);
+  if (existing) {
+    clearTimeout(existing);
+    turnTimeouts.delete(room.code);
+  }
+
+  const game = room.game;
+  const currentPlayerId = game ? TurnService.currentPlayerId(room) : undefined;
+  if (!game || !currentPlayerId || game.phase === 'roundEnded' || game.phase === 'paused' || game.phase === 'lobby') {
+    return;
+  }
+
+  const delay = Math.max(250, game.turnExpiresAt - Date.now() + 200);
+  const timer = setTimeout(() => {
+    turnTimeouts.delete(room.code);
+    try {
+      const result = gameManager.handleTurnTimeout(room.code, currentPlayerId);
+      emitResult(io, result, currentPlayerId);
+    } catch {
+      // Timeouts are a safety net; never crash the socket server from one.
+    }
+  }, delay);
+  turnTimeouts.set(room.code, timer);
 }
 
 function requireSession(socket: Socket): ClientSession {
@@ -216,4 +289,8 @@ function requireRoomCode(value: string): string {
     throw new Error('Enter a valid 6-character room code.');
   }
   return roomCode;
+}
+
+function sanitizeShortText(value: string, maxLength: number): string {
+  return String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, maxLength);
 }

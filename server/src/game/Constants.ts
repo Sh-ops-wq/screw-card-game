@@ -1,4 +1,4 @@
-export const MIN_PLAYERS = 4;
+export const MIN_PLAYERS = 2;
 export const MAX_PLAYERS = 6;
 export const DISCONNECT_GRACE_MS = 2 * 60 * 1000;
 export const SCREW_UNLOCK_SECONDS = 600;
@@ -10,5 +10,9 @@ export const WRONG_MATCH_PENALTY_POINTS = 10;
 export const WRONG_MATCH_PENALTY_MODE: 'points' | 'card' = 'points';
 export const INITIAL_PEEK_COUNT = 2;
 export const TURN_TRANSITION_DELAY_MS = 5000;
+export const TURN_TIMEOUT_MS = 45_000;
 export const BOT_THINK_TIME_MIN_MS = 1500;
 export const BOT_THINK_TIME_MAX_MS = 2500;
+export const ILLEGAL_WARNING_LIMIT = 2;
+export const ILLEGAL_ATTEMPT_PENALTY_POINTS = 5;
+export const TIMEOUT_PENALTY_POINTS = 5;

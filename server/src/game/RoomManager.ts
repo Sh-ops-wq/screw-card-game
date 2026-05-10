@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from 'node:crypto';
-import { DISCONNECT_GRACE_MS, MAX_PLAYERS, MIN_PLAYERS } from './Constants';
+import { DISCONNECT_GRACE_MS, MAX_PLAYERS, MIN_PLAYERS, TURN_TIMEOUT_MS, TURN_TRANSITION_DELAY_MS } from './Constants';
 import type { GameRoom, ServerPlayer } from './Types';
 
 export class RoomManager {
@@ -17,6 +17,8 @@ export class RoomManager {
       isBot: false,
       isHost: true,
       penaltyPoints: 0,
+      warningCount: 0,
+      timeoutCount: 0,
       initialPeekDone: false
     };
 
@@ -24,6 +26,7 @@ export class RoomManager {
       code: roomCode,
       hostId: playerId,
       players: [player],
+      chatMessages: [],
       createdAt: Date.now()
     };
 
@@ -50,7 +53,7 @@ export class RoomManager {
     }
 
     if (room.players.length >= MAX_PLAYERS) {
-      throw new Error('This room is full. Screw supports 4 to 6 players.');
+      throw new Error('This room is full. Screw supports 2 to 6 players.');
     }
 
     if (room.game && room.game.phase !== 'roundEnded') {
@@ -65,6 +68,8 @@ export class RoomManager {
       isBot: false,
       isHost: false,
       penaltyPoints: 0,
+      warningCount: 0,
+      timeoutCount: 0,
       initialPeekDone: false
     };
 
@@ -95,6 +100,8 @@ export class RoomManager {
         isBot: true,
         isHost: false,
         penaltyPoints: 0,
+        warningCount: 0,
+        timeoutCount: 0,
         initialPeekDone: false
       });
     }
@@ -180,6 +187,8 @@ export class RoomManager {
     for (const player of room.players) {
       player.initialPeekDone = false;
       player.penaltyPoints = 0;
+      player.warningCount = 0;
+      player.timeoutCount = 0;
     }
   }
 
@@ -195,6 +204,8 @@ export class RoomManager {
     if (everyoneConnected && room.game.phase === 'paused') {
       room.game.phase = room.game.pendingAction ? 'action' : 'playing';
       room.game.pausedReason = undefined;
+      room.game.turnReadyAt = Date.now() + TURN_TRANSITION_DELAY_MS;
+      room.game.turnExpiresAt = room.game.turnReadyAt + TURN_TIMEOUT_MS;
     }
   }
 

@@ -41,6 +41,7 @@ export interface PublicPlayer {
   connected: boolean;
   handSize: number;
   penaltyPoints: number;
+  warningCount: number;
   initialPeekDone: boolean;
   seatIndex: number;
 }
@@ -54,12 +55,14 @@ export interface RoomState {
   minPlayers: number;
   maxPlayers: number;
   players: PublicPlayer[];
+  chatMessages?: ChatMessage[];
   inviteUrl?: string;
 }
 
 export interface PublicGameState extends RoomState {
   currentPlayerId?: string;
   turnReadyAt?: number;
+  turnExpiresAt?: number;
   turnTransitionDelayMs?: number;
   roundStartedAt?: number;
   screwUnlockAt?: number;
@@ -71,6 +74,22 @@ export interface PublicGameState extends RoomState {
   log: string[];
   pausedReason?: string;
   winnerId?: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  playerId: string;
+  nickname: string;
+  message: string;
+  createdAt: number;
+}
+
+export interface EmojiReaction {
+  id: string;
+  playerId: string;
+  nickname: string;
+  emoji: string;
+  createdAt: number;
 }
 
 export interface PrivateHandSlot {
@@ -104,6 +123,7 @@ export interface ScoreLine {
   nickname: string;
   total: number;
   penaltyPoints: number;
+  warningCount?: number;
   cards: PublicCard[];
   isWinner: boolean;
   isScrewCaller: boolean;

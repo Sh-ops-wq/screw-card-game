@@ -5,6 +5,7 @@ type TranslationKey =
   | 'bot'
   | 'callScrew'
   | 'cardsLeft'
+  | 'chat'
   | 'chooseCard'
   | 'choosePlayer'
   | 'connected'
@@ -37,13 +38,16 @@ type TranslationKey =
   | 'roomCode'
   | 'roundComplete'
   | 'scoreboard'
+  | 'send'
   | 'sound'
+  | 'stats'
   | 'startGame'
   | 'takeFromGround'
   | 'turn'
   | 'useAction'
   | 'waiting'
   | 'winner'
+  | 'warnings'
   | 'yourHand'
   | 'yourTurn';
 
@@ -55,6 +59,7 @@ const dictionary: Record<Language, Record<TranslationKey, string>> = {
     bot: 'Bot',
     callScrew: 'Call Screw',
     cardsLeft: 'left',
+    chat: 'Chat',
     chooseCard: 'Choose a card',
     choosePlayer: 'Choose a player',
     connected: 'Connected',
@@ -87,13 +92,16 @@ const dictionary: Record<Language, Record<TranslationKey, string>> = {
     roomCode: 'Room Code',
     roundComplete: 'Round Complete',
     scoreboard: 'Scoreboard',
+    send: 'Send',
     sound: 'Sound',
+    stats: 'Stats',
     startGame: 'Start Game',
     takeFromGround: 'Take from Ground',
     turn: 'Turn',
     useAction: 'Use Action',
     waiting: 'Waiting for players',
     winner: 'Winner',
+    warnings: 'Warnings',
     yourHand: 'Your Hand',
     yourTurn: 'Your Turn'
   },
@@ -102,6 +110,7 @@ const dictionary: Record<Language, Record<TranslationKey, string>> = {
     bot: 'بوت',
     callScrew: 'قول سكرو',
     cardsLeft: 'فاضل',
+    chat: 'الشات',
     chooseCard: 'اختار كارت',
     choosePlayer: 'اختار لاعب',
     connected: 'متصل',
@@ -134,13 +143,16 @@ const dictionary: Record<Language, Record<TranslationKey, string>> = {
     roomCode: 'كود الروم',
     roundComplete: 'الجولة خلصت',
     scoreboard: 'النتيجة',
+    send: 'ابعت',
     sound: 'الصوت',
+    stats: 'الإحصائيات',
     startGame: 'ابدأ اللعبة',
     takeFromGround: 'خد من الأرض',
     turn: 'الدور',
     useAction: 'استخدم الحركة',
     waiting: 'مستنيين لاعيبة',
     winner: 'الفائز',
+    warnings: 'تحذيرات',
     yourHand: 'كروتك',
     yourTurn: 'دورك'
   }

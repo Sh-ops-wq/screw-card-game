@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { ActionPrompt, PrivatePlayerState, PublicCard, PublicGameState, RevealedCard, RoomState, RoundEndedPayload } from '../../shared/types';
+import type { ActionPrompt, EmojiReaction, PrivatePlayerState, PublicCard, PublicGameState, RevealedCard, RoomState, RoundEndedPayload } from '../../shared/types';
 import { createSocket } from './game/socket';
 import { getSoundEnabled, playSound, setSoundEnabled as persistSoundEnabled } from './game/sounds';
 import { getT, type Language } from './i18n';
@@ -28,6 +28,7 @@ export default function App() {
   const [privateState, setPrivateState] = useState<PrivatePlayerState | null>(null);
   const [reveals, setReveals] = useState<RevealMap>({});
   const [prompt, setPrompt] = useState<ActionPrompt | null>(null);
+  const [emojiReactions, setEmojiReactions] = useState<EmojiReaction[]>([]);
   const [toast, setToast] = useState<string | null>(null);
   const [roundEnded, setRoundEnded] = useState<RoundEndedPayload | null>(null);
   const [language, setLanguageState] = useState<Language>(() => (localStorage.getItem(LANGUAGE_KEY) === 'ar' ? 'ar' : 'en'));
@@ -85,6 +86,12 @@ export default function App() {
       }, Math.max(500, payload.expiresAt - Date.now() + 100));
     });
     socket.on('actionPrompt', setPrompt);
+    socket.on('playerReaction', (reaction: EmojiReaction) => {
+      setEmojiReactions((current) => [...current.filter((item) => Date.now() - item.createdAt < 4500), reaction].slice(-12));
+      window.setTimeout(() => {
+        setEmojiReactions((current) => current.filter((item) => item.id !== reaction.id));
+      }, 4200);
+    });
     socket.on('errorMessage', (message: string) => {
       setToast(message);
       playSound('error');
@@ -141,6 +148,7 @@ export default function App() {
           privateState={privateState}
           reveals={reveals}
           prompt={prompt}
+          emojiReactions={emojiReactions}
           roundEnded={roundEnded}
           language={language}
           t={t}

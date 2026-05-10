@@ -1,11 +1,15 @@
 import { randomInt } from 'node:crypto';
 import {
   ALLOW_MATCH_DISCARD,
+  ILLEGAL_ATTEMPT_PENALTY_POINTS,
+  ILLEGAL_WARNING_LIMIT,
   INITIAL_PEEK_COUNT,
   MAX_PLAYERS,
   MIN_PLAYERS,
   SCREW_UNLOCK_MS,
   START_WITH_HOST,
+  TIMEOUT_PENALTY_POINTS,
+  TURN_TIMEOUT_MS,
   WRONG_MATCH_PENALTY_POINTS
 } from './Constants';
 import { DeckService } from './DeckService';
@@ -35,7 +39,7 @@ export class GameManager {
       throw new Error('Only the host can start the game.');
     }
     if (room.players.length < MIN_PLAYERS || room.players.length > MAX_PLAYERS) {
-      throw new Error('Screw starts with 4 to 6 players.');
+      throw new Error('Screw starts with 2 to 6 players.');
     }
     if (room.players.some((player) => !player.connected && !player.isBot)) {
       throw new Error('All seated players must be connected before starting.');
@@ -64,6 +68,7 @@ export class GameManager {
       turnOrder,
       currentTurnIndex,
       turnReadyAt: now,
+      turnExpiresAt: now + TURN_TIMEOUT_MS,
       roundStartedAt: now,
       screwUnlockAt: now + SCREW_UNLOCK_MS,
       finalRound: false,
@@ -107,6 +112,7 @@ export class GameManager {
     if (room.players.every((candidate) => candidate.initialPeekDone)) {
       game.phase = 'playing';
       game.turnReadyAt = Date.now();
+      game.turnExpiresAt = game.turnReadyAt + TURN_TIMEOUT_MS;
       game.log.push(`${room.players.find((candidate) => candidate.id === TurnService.currentPlayerId(room))?.nickname ?? 'First player'} starts.`);
     }
 
@@ -255,26 +261,73 @@ export class GameManager {
     if (!top) {
       throw new Error('No discard card is available to match.');
     }
-    const topDef = DeckService.getDefinition(top);
-    if (topDef.type !== 'number') {
-      throw new Error('You can only match number cards.');
-    }
-
     const playerState = game.playerStates[playerId];
     this.assertCardIndex(playerState.hand, cardIndex);
     const selected = playerState.hand[cardIndex];
+    const topDef = DeckService.getDefinition(top);
     const selectedDef = DeckService.getDefinition(selected);
     const player = this.roomManager.requirePlayer(room, playerId);
 
-    if (selectedDef.type === 'number' && selectedDef.rank === topDef.rank) {
+    if (topDef.type === 'number' && selectedDef.type === 'number' && selectedDef.rank === topDef.rank) {
       const [removed] = playerState.hand.splice(cardIndex, 1);
       game.discardPile.push(removed);
       game.log.push(`${player.nickname} matched the discard and dropped a card.`);
       return { room };
     }
 
-    player.penaltyPoints += WRONG_MATCH_PENALTY_POINTS;
-    game.log.push(`${player.nickname} missed a match discard and took +${WRONG_MATCH_PENALTY_POINTS}.`);
+    this.addWarning(room, playerId, 'missed a free drop.', WRONG_MATCH_PENALTY_POINTS);
+    return { room };
+  }
+
+  recordIllegalAttempt(roomCode: string, playerId: string, reason: string): EngineResult {
+    const room = this.roomManager.requireRoom(roomCode);
+    this.addWarning(room, playerId, reason, ILLEGAL_ATTEMPT_PENALTY_POINTS);
+    return { room };
+  }
+
+  handleTurnTimeout(roomCode: string, playerId: string, now = Date.now()): EngineResult {
+    const room = this.roomManager.requireRoom(roomCode);
+    const game = TurnService.requireGame(room);
+    if (game.phase !== 'playing' && game.phase !== 'action') {
+      return { room };
+    }
+    if (TurnService.currentPlayerId(room) !== playerId || now < game.turnExpiresAt) {
+      return { room };
+    }
+
+    const player = this.roomManager.requirePlayer(room, playerId);
+    player.timeoutCount += 1;
+    player.warningCount += 1;
+    if (player.timeoutCount > 1) {
+      player.penaltyPoints += TIMEOUT_PENALTY_POINTS;
+    }
+
+    if (game.drawnCard?.playerId === playerId) {
+      game.discardPile.push(game.drawnCard.card);
+    } else if (game.pendingAction?.actorId === playerId) {
+      game.discardPile.push(game.pendingAction.actionCard);
+    }
+    game.drawnCard = undefined;
+    game.pendingAction = undefined;
+    game.phase = 'playing';
+    game.log.push(player.timeoutCount > 1 ? `${player.nickname} timed out and took +${TIMEOUT_PENALTY_POINTS}.` : `${player.nickname} timed out. Warning given.`);
+
+    const ended = TurnService.endTurn(room);
+    return this.afterTurnResult(room, { roundEnded: ended });
+  }
+
+  handleDisconnectState(room: GameRoom): EngineResult {
+    if (!room.game || room.game.phase === 'lobby' || room.game.phase === 'roundEnded') {
+      return { room };
+    }
+
+    const disconnectedHumans = room.players.filter((player) => !player.isBot && !player.connected).length;
+    const activeSeats = room.players.filter((player) => player.connected || player.isBot).length;
+    if (disconnectedHumans >= 2 || activeSeats < 2) {
+      room.game.log.push('Match ended safely because too many players disconnected.');
+      return this.finishRound(room);
+    }
+
     return { room };
   }
 
@@ -364,5 +417,15 @@ export class GameManager {
 
   private playerName(room: GameRoom, playerId: string): string {
     return room.players.find((player) => player.id === playerId)?.nickname ?? 'A player';
+  }
+
+  private addWarning(room: GameRoom, playerId: string, reason: string, penaltyPoints: number): void {
+    const player = this.roomManager.requirePlayer(room, playerId);
+    player.warningCount += 1;
+    const shouldPunish = player.warningCount >= ILLEGAL_WARNING_LIMIT;
+    if (shouldPunish) {
+      player.penaltyPoints += penaltyPoints;
+    }
+    room.game?.log.push(shouldPunish ? `${player.nickname} ${reason} Penalty +${penaltyPoints}.` : `${player.nickname} warning: ${reason}`);
   }
 }

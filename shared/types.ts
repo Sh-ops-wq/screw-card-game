@@ -60,6 +60,14 @@ export interface RoomState {
   inviteUrl?: string;
 }
 
+/** Eye marker: a card slot that has been peeked (visible to everyone as an eye icon) */
+export interface PeekMarker {
+  ownerId: string;
+  index: number;
+  peekerId: string;
+  peekerName: string;
+}
+
 export interface PublicGameState extends RoomState {
   currentPlayerId?: string;
   turnReadyAt?: number;
@@ -75,6 +83,8 @@ export interface PublicGameState extends RoomState {
   log: string[];
   pausedReason?: string;
   winnerId?: string;
+  /** Eye markers — which card slots have been peeked (everyone sees the eye, only the peeker saw the card) */
+  peekMarkers: PeekMarker[];
 }
 
 export interface ChatMessage {
@@ -130,15 +140,20 @@ export interface ScoreLine {
   isScrewCaller: boolean;
 }
 
+export interface MatchStandingLine {
+  playerId: string;
+  nickname: string;
+  points: number;
+  gamePoints: number[];
+}
+
 export interface RoundEndedPayload {
   scores: ScoreLine[];
   winnerId: string;
   screwCallerId?: string;
-  /** Standings toward the overall match after this round resolves. */
-  matchStanding?: Array<{ playerId: string; nickname: string; wins: number }>;
-  /** How many round wins clinch the match (see shared/gameConfig.ts). */
-  roundsToWin?: number;
-  /** Present when someone reached roundsToWin. */
+  matchStanding?: MatchStandingLine[];
+  gamesPerMatch?: number;
+  matchGamesPlayed?: number;
   matchWinnerId?: string;
 }
 

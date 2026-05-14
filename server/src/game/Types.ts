@@ -1,4 +1,4 @@
-import type { ActionPrompt, ChatMessage, PublicCard, RoomPhase, ScoreLine } from '../../../shared/types';
+import type { ActionPrompt, ChatMessage, PeekMarker, PublicCard, RoomPhase, ScoreLine } from '../../../shared/types';
 
 export interface CardInstance {
   instanceId: string;
@@ -59,6 +59,8 @@ export interface GameState {
   pausedReason?: string;
   scores?: ScoreLine[];
   winnerId?: string;
+  /** Cards that have been peeked — eye icon shown to all players */
+  peekMarkers: PeekMarker[];
 }
 
 export interface GameRoom {
@@ -68,9 +70,9 @@ export interface GameRoom {
   game?: GameState;
   chatMessages: ChatMessage[];
   createdAt: number;
-  /** Cumulative round wins per player Id for best-of-N match play. */
-  matchWins: Record<string, number>;
-  /** When true, host's next Restart clears match standings (fresh bracket). */
+  matchPoints: Record<string, number>;
+  matchGamePoints: Record<string, number[]>;
+  matchGamesPlayed: number;
   pendingMatchReset: boolean;
 }
 
@@ -79,4 +81,6 @@ export interface ActionResult {
   reveals?: Array<{ ownerId: string; index: number; card: PublicCard }>;
   endTurn?: boolean;
   log?: string[];
+  /** New peek markers to broadcast */
+  peekMarkers?: PeekMarker[];
 }

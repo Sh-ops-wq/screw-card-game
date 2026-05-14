@@ -29,7 +29,9 @@ export class RoomManager {
       players: [player],
       chatMessages: [],
       createdAt: Date.now(),
-      matchWins: {},
+      matchPoints: {},
+      matchGamePoints: {},
+      matchGamesPlayed: 0,
       pendingMatchReset: false
     };
 

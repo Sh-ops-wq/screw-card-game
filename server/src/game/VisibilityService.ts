@@ -40,7 +40,8 @@ export class VisibilityService {
       discardTop: discardTop ? toPublicCard(DeckService.getDefinition(discardTop)) : null,
       log: game?.log.slice(-80) ?? [],
       pausedReason: game?.pausedReason,
-      winnerId: game?.winnerId
+      winnerId: game?.winnerId,
+      peekMarkers: game?.peekMarkers ?? []
     };
   }
 

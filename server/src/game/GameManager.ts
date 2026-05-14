@@ -1,4 +1,4 @@
-import { MATCH_ROUND_WINS_TO_WIN } from '../../../shared/gameConfig';
+import { GAMES_PER_MATCH } from '../../../shared/gameConfig';
 import { randomInt } from 'node:crypto';
 import {
   ALLOW_MATCH_DISCARD,
@@ -18,7 +18,7 @@ import { ActionService } from './ActionService';
 import { RoomManager } from './RoomManager';
 import { ScoringService } from './ScoringService';
 import { TurnService } from './TurnService';
-import type { ActionPrompt, PublicCard, RevealedCard, RoundEndedPayload } from '../../../shared/types';
+import type { ActionPrompt, MatchStandingLine, PublicCard, RevealedCard, RoundEndedPayload } from '../../../shared/types';
 import type { ActionResult, CardInstance, GameRoom } from './Types';
 
 export interface EngineResult {
@@ -36,29 +36,17 @@ export class GameManager {
 
   startGame(roomCode: string, hostId: string, now = Date.now()): EngineResult {
     const room = this.roomManager.requireRoom(roomCode);
-    if (room.hostId !== hostId) {
-      throw new Error('Only the host can start the game.');
-    }
-    if (room.players.length < MIN_PLAYERS || room.players.length > MAX_PLAYERS) {
-      throw new Error('Screw starts with 2 to 6 players.');
-    }
-    if (room.players.some((player) => !player.connected && !player.isBot)) {
-      throw new Error('All seated players must be connected before starting.');
-    }
+    if (room.hostId !== hostId) throw new Error('بس الهوست يقدر يبدأ الجيم.');
+    if (room.players.length < MIN_PLAYERS || room.players.length > MAX_PLAYERS) throw new Error('سكرو بيتلعب من 2 لـ 6 لاعيبة.');
+    if (room.players.some((p) => !p.connected && !p.isBot)) throw new Error('كل اللاعيبة لازم يكونوا متصلين.');
 
     this.roomManager.resetPlayersForRound(room);
     const deck = DeckService.shuffle(DeckService.buildDeck());
     const playerStates = Object.fromEntries(
-      room.players.map((player) => [
-        player.id,
-        {
-          playerId: player.id,
-          hand: Array.from({ length: 4 }, () => DeckService.draw(deck))
-        }
-      ])
+      room.players.map((p) => [p.id, { playerId: p.id, hand: Array.from({ length: 4 }, () => DeckService.draw(deck)) }])
     );
     const discardPile = [DeckService.draw(deck)];
-    const turnOrder = room.players.map((player) => player.id);
+    const turnOrder = room.players.map((p) => p.id);
     const currentTurnIndex = START_WITH_HOST ? Math.max(0, turnOrder.indexOf(room.hostId)) : randomInt(turnOrder.length);
 
     room.game = {
@@ -74,9 +62,9 @@ export class GameManager {
       screwUnlockAt: now + SCREW_UNLOCK_MS,
       finalRound: false,
       finalTurnQueue: [],
-      log: ['Round started. Choose 2 cards to peek, then remember them.']
+      log: ['ابدأ — اختار كارتين تبصهم وافتكرهم.'],
+      peekMarkers: [],
     };
-
     return { room };
   }
 
@@ -84,39 +72,27 @@ export class GameManager {
     const room = this.roomManager.requireRoom(roomCode);
     const game = TurnService.requireGame(room);
     const player = this.roomManager.requirePlayer(room, playerId);
-    if (game.phase !== 'initialPeek') {
-      throw new Error('Initial peek is not active.');
-    }
-    if (player.initialPeekDone) {
-      throw new Error('You already chose your initial peek.');
-    }
+    if (game.phase !== 'initialPeek') throw new Error('مش وقت البصة الأولية.');
+    if (player.initialPeekDone) throw new Error('انت بصيت الأول.');
 
     const indexes = [...new Set(cardIndexes)];
-    if (indexes.length !== INITIAL_PEEK_COUNT) {
-      throw new Error(`Choose exactly ${INITIAL_PEEK_COUNT} cards.`);
-    }
+    if (indexes.length !== INITIAL_PEEK_COUNT) throw new Error(`اختار ${INITIAL_PEEK_COUNT} كروت بالظبط.`);
 
     const playerState = game.playerStates[playerId];
     const reveals = indexes.map((index) => {
-      if (!Number.isInteger(index) || index < 0 || index >= playerState.hand.length) {
-        throw new Error('Card index is not valid.');
-      }
-      return {
-        ownerId: playerId,
-        index,
-        card: ActionService.publicCard(playerState.hand[index])
-      };
+      if (!Number.isInteger(index) || index < 0 || index >= playerState.hand.length) throw new Error('رقم الكارت مش صح.');
+      return { ownerId: playerId, index, card: ActionService.publicCard(playerState.hand[index]) };
     });
 
     player.initialPeekDone = true;
-    game.log.push(`${player.nickname} finished initial peek.`);
-    if (room.players.every((candidate) => candidate.initialPeekDone)) {
+    game.log.push(`${player.nickname} خلص البصة الأولية.`);
+    if (room.players.every((p) => p.initialPeekDone)) {
       game.phase = 'playing';
       game.turnReadyAt = Date.now();
       game.turnExpiresAt = game.turnReadyAt + TURN_TIMEOUT_MS;
-      game.log.push(`${room.players.find((candidate) => candidate.id === TurnService.currentPlayerId(room))?.nickname ?? 'First player'} starts.`);
+      const firstPlayer = room.players.find((p) => p.id === TurnService.currentPlayerId(room));
+      game.log.push(`${firstPlayer?.nickname ?? 'الأول'} يبدأ.`);
     }
-
     return { room, reveals };
   }
 
@@ -124,13 +100,11 @@ export class GameManager {
     const room = this.roomManager.requireRoom(roomCode);
     const game = TurnService.requireGame(room);
     this.assertPlayingTurn(room, playerId);
-    if (game.drawnCard) {
-      throw new Error('You already drew a card.');
-    }
+    if (game.drawnCard) throw new Error('انت سحبت كارت بالفعل.');
     this.recycleIfNeeded(room);
     const card = DeckService.draw(game.deck);
     game.drawnCard = { playerId, card, source: 'deck' };
-    game.log.push(`${this.playerName(room, playerId)} drew from the deck.`);
+    game.log.push(`${this.playerName(room, playerId)} سحب من القومة.`);
     return { room, drawnCard: ActionService.publicCard(card), drawnCardSource: 'deck' };
   }
 
@@ -138,15 +112,11 @@ export class GameManager {
     const room = this.roomManager.requireRoom(roomCode);
     const game = TurnService.requireGame(room);
     this.assertPlayingTurn(room, playerId);
-    if (game.drawnCard) {
-      throw new Error('You already chose a card this turn.');
-    }
+    if (game.drawnCard) throw new Error('انت اخترت كارت بالفعل.');
     const card = game.discardPile.pop();
-    if (!card) {
-      throw new Error('No ground card is available.');
-    }
+    if (!card) throw new Error('مفيش كارت على الأرض.');
     game.drawnCard = { playerId, card, source: 'ground' };
-    game.log.push(`${this.playerName(room, playerId)} took from the ground.`);
+    game.log.push(`${this.playerName(room, playerId)} أخد من الأرض.`);
     return { room, drawnCard: ActionService.publicCard(card), drawnCardSource: 'ground' };
   }
 
@@ -158,11 +128,15 @@ export class GameManager {
     const playerState = game.playerStates[playerId];
     this.assertCardIndex(playerState.hand, replaceIndex);
 
+    // Clear peek marker for replaced slot
+    ActionService.clearMarkersForSlot(room, playerId, replaceIndex);
+
     const oldCard = playerState.hand[replaceIndex];
     playerState.hand[replaceIndex] = drawn.card;
     game.discardPile.push(oldCard);
     game.drawnCard = undefined;
-    game.log.push(drawn.source === 'ground' ? `${this.playerName(room, playerId)} swapped with the ground.` : `${this.playerName(room, playerId)} kept the drawn card.`);
+    const msg = drawn.source === 'ground' ? `${this.playerName(room, playerId)} اتبادل مع الأرض.` : `${this.playerName(room, playerId)} احتفظ بالكارت.`;
+    game.log.push(msg);
     const ended = TurnService.endTurn(room);
     return this.afterTurnResult(room, {
       reveals: [{ ownerId: playerId, index: replaceIndex, card: ActionService.publicCard(drawn.card) }],
@@ -175,12 +149,20 @@ export class GameManager {
     const game = TurnService.requireGame(room);
     this.assertPlayingTurn(room, playerId);
     const drawn = this.requireDrawnBy(room, playerId);
-    if (drawn.source === 'ground') {
-      throw new Error('A ground card must replace one of your cards.');
+
+    // ── MANDATORY ACTION: if card has an effect, force it ──────────────
+    if (drawn.source === 'deck') {
+      const def = DeckService.getDefinition(drawn.card);
+      if (def.effectType !== 'none' && def.effectType !== 'thief') {
+        // Auto-trigger the action instead of discarding
+        const result = ActionService.startDrawnCardAction(room, playerId);
+        return this.applyActionResult(room, result);
+      }
     }
+
     game.discardPile.push(drawn.card);
     game.drawnCard = undefined;
-    game.log.push(`${this.playerName(room, playerId)} put the card on the ground.`);
+    game.log.push(`${this.playerName(room, playerId)} رمى الكارت على الأرض.`);
     const ended = TurnService.endTurn(room);
     return this.afterTurnResult(room, { roundEnded: ended });
   }
@@ -225,9 +207,7 @@ export class GameManager {
     const room = this.roomManager.requireRoom(roomCode);
     this.roomManager.requirePlayer(room, playerId);
     const game = TurnService.requireGame(room);
-    if (game.phase !== 'playing') {
-      throw new Error('Screw can only be called during active play.');
-    }
+    if (game.phase !== 'playing') throw new Error('سكرو بس في وسط اللعب.');
     TurnService.assertTurnReady(room);
     TurnService.callScrew(room, playerId, now);
     return this.finishRound(room);
@@ -243,149 +223,110 @@ export class GameManager {
   restartRound(roomCode: string, hostId: string): EngineResult {
     const room = this.roomManager.requireRoom(roomCode);
     if (room.pendingMatchReset) {
-      room.matchWins = {};
+      room.matchPoints = {};
+      room.matchGamePoints = {};
+      room.matchGamesPlayed = 0;
       room.pendingMatchReset = false;
     }
     return this.startGame(roomCode, hostId);
   }
 
   matchDiscard(roomCode: string, playerId: string, cardIndex: number): EngineResult {
-    if (!ALLOW_MATCH_DISCARD) {
-      throw new Error('Match discard is disabled for this table.');
-    }
+    if (!ALLOW_MATCH_DISCARD) throw new Error('Match discard معطل.');
     const room = this.roomManager.requireRoom(roomCode);
     const game = TurnService.requireGame(room);
     this.roomManager.requirePlayer(room, playerId);
-    if (game.phase !== 'playing') {
-      throw new Error('Match discard is only available during active play.');
-    }
-
+    if (game.phase !== 'playing') throw new Error('Match discard بس في وسط اللعب.');
     const top = game.discardPile.at(-1);
-    if (!top) {
-      throw new Error('No discard card is available to match.');
-    }
+    if (!top) throw new Error('مفيش كارت على الأرض.');
     const playerState = game.playerStates[playerId];
     this.assertCardIndex(playerState.hand, cardIndex);
     const selected = playerState.hand[cardIndex];
     const topDef = DeckService.getDefinition(top);
     const selectedDef = DeckService.getDefinition(selected);
-    const player = this.roomManager.requirePlayer(room, playerId);
-
     if (topDef.type === 'number' && selectedDef.type === 'number' && selectedDef.rank === topDef.rank) {
+      ActionService.clearMarkersForSlot(room, playerId, cardIndex);
       const [removed] = playerState.hand.splice(cardIndex, 1);
       game.discardPile.push(removed);
-      game.log.push(`${player.nickname} matched the discard and dropped a card.`);
+      game.log.push(`${this.playerName(room, playerId)} طابق الكارت ورماها.`);
       return { room };
     }
-
-    this.addWarning(room, playerId, 'missed a free drop.', WRONG_MATCH_PENALTY_POINTS);
+    // No penalty — just ignore
     return { room };
   }
 
   recordIllegalAttempt(roomCode: string, playerId: string, reason: string): EngineResult {
     const room = this.roomManager.requireRoom(roomCode);
-    this.addWarning(room, playerId, reason, ILLEGAL_ATTEMPT_PENALTY_POINTS);
+    // Warnings disabled — log only
+    room.game?.log.push(`${this.playerName(room, playerId)}: ${reason}`);
     return { room };
   }
 
   handleTurnTimeout(roomCode: string, playerId: string, now = Date.now()): EngineResult {
     const room = this.roomManager.requireRoom(roomCode);
     const game = TurnService.requireGame(room);
-    if (game.phase !== 'playing' && game.phase !== 'action') {
-      return { room };
-    }
-    if (TurnService.currentPlayerId(room) !== playerId || now < game.turnExpiresAt) {
-      return { room };
-    }
-
-    const player = this.roomManager.requirePlayer(room, playerId);
-    player.timeoutCount += 1;
-    player.warningCount += 1;
-    if (player.timeoutCount > 1) {
-      player.penaltyPoints += TIMEOUT_PENALTY_POINTS;
-    }
-
-    if (game.drawnCard?.playerId === playerId) {
-      game.discardPile.push(game.drawnCard.card);
-    } else if (game.pendingAction?.actorId === playerId) {
-      game.discardPile.push(game.pendingAction.actionCard);
-    }
-    game.drawnCard = undefined;
-    game.pendingAction = undefined;
-    game.phase = 'playing';
-    game.log.push(player.timeoutCount > 1 ? `${player.nickname} timed out and took +${TIMEOUT_PENALTY_POINTS}.` : `${player.nickname} timed out. Warning given.`);
-
-    const ended = TurnService.endTurn(room);
-    return this.afterTurnResult(room, { roundEnded: ended });
+    if (game.phase !== 'playing' && game.phase !== 'action') return { room };
+    if (TurnService.currentPlayerId(room) !== playerId || now < game.turnExpiresAt) return { room };
+    // Infinite timer — no timeout action
+    return { room };
   }
 
   handleDisconnectState(room: GameRoom): EngineResult {
-    if (!room.game || room.game.phase === 'lobby' || room.game.phase === 'roundEnded') {
-      return { room };
-    }
-
-    const disconnectedHumans = room.players.filter((player) => !player.isBot && !player.connected).length;
-    const activeSeats = room.players.filter((player) => player.connected || player.isBot).length;
+    if (!room.game || room.game.phase === 'lobby' || room.game.phase === 'roundEnded') return { room };
+    const disconnectedHumans = room.players.filter((p) => !p.isBot && !p.connected).length;
+    const activeSeats = room.players.filter((p) => p.connected || p.isBot).length;
     if (disconnectedHumans >= 2 || activeSeats < 2) {
-      room.game.log.push('Match ended safely because too many players disconnected.');
+      room.game.log.push('الجيم انتهى لأن لاعيبة اتقطعوا.');
       return this.finishRound(room);
     }
-
     return { room };
   }
 
   finishRound(room: GameRoom): EngineResult {
     const game = TurnService.requireGame(room);
     const scores = ScoringService.calculate(room);
-    const winner = scores.find((score) => score.isWinner);
+    const winner = scores.find((s) => s.isWinner);
     game.phase = 'roundEnded';
     game.scores = scores;
     const roundWinnerId = winner?.playerId ?? scores[0]?.playerId;
     game.winnerId = roundWinnerId;
 
-    const prior = room.matchWins[roundWinnerId] ?? 0;
-    room.matchWins[roundWinnerId] = prior + 1;
+    for (const score of scores) {
+      room.matchPoints[score.playerId] = (room.matchPoints[score.playerId] ?? 0) + score.total;
+      if (!room.matchGamePoints[score.playerId]) room.matchGamePoints[score.playerId] = [];
+      room.matchGamePoints[score.playerId].push(score.total);
+    }
+    room.matchGamesPlayed += 1;
+
     let matchWinnerId: string | undefined;
-    if (room.matchWins[roundWinnerId] >= MATCH_ROUND_WINS_TO_WIN) {
-      matchWinnerId = roundWinnerId;
+    if (room.matchGamesPlayed >= GAMES_PER_MATCH) {
+      const sorted = Object.entries(room.matchPoints).sort((a, b) => a[1] - b[1]);
+      matchWinnerId = sorted[0]?.[0];
       room.pendingMatchReset = true;
     }
 
-    const matchStanding = room.players
-      .map((player) => ({
-        playerId: player.id,
-        nickname: player.nickname,
-        wins: room.matchWins[player.id] ?? 0
-      }))
-      .sort((a, b) => b.wins - a.wins || a.nickname.localeCompare(b.nickname));
+    const matchStanding: MatchStandingLine[] = room.players
+      .map((p) => ({ playerId: p.id, nickname: p.nickname, points: room.matchPoints[p.id] ?? 0, gamePoints: room.matchGamePoints[p.id] ?? [] }))
+      .sort((a, b) => a.points - b.points);
 
     game.drawnCard = undefined;
     game.pendingAction = undefined;
-    game.log.push(`${winner?.nickname ?? 'A player'} wins the round.`);
+    game.peekMarkers = [];
+    game.log.push(`${winner?.nickname ?? 'لاعب'} كسب الجولة!`);
+
     return {
       room,
-      roundEnded: {
-        scores,
-        winnerId: roundWinnerId,
-        screwCallerId: game.screwCallerId,
-        matchStanding,
-        roundsToWin: MATCH_ROUND_WINS_TO_WIN,
-        matchWinnerId
-      }
+      roundEnded: { scores, winnerId: roundWinnerId, screwCallerId: game.screwCallerId, matchStanding, gamesPerMatch: GAMES_PER_MATCH, matchGamesPlayed: room.matchGamesPlayed, matchWinnerId }
     };
   }
 
   private applyActionResult(room: GameRoom, result: ActionResult): EngineResult {
-    if (result.log?.length) {
-      room.game?.log.push(...result.log);
-    }
+    if (result.log?.length) room.game?.log.push(...result.log);
+    // Apply peek markers to game state
+    if (result.peekMarkers?.length) ActionService.applyPeekMarkers(room, result.peekMarkers);
     if (result.endTurn) {
       const ended = TurnService.endTurn(room);
-      return this.afterTurnResult(room, {
-        reveals: result.reveals,
-        prompt: result.prompt,
-        roundEnded: ended
-      });
+      return this.afterTurnResult(room, { reveals: result.reveals, prompt: result.prompt, roundEnded: ended });
     }
     return { room, reveals: result.reveals, prompt: result.prompt };
   }
@@ -393,63 +334,39 @@ export class GameManager {
   private afterTurnResult(room: GameRoom, partial: { reveals?: RevealedCard[]; prompt?: ActionPrompt; roundEnded?: boolean }): EngineResult {
     if (partial.roundEnded) {
       const ended = this.finishRound(room);
-      return {
-        ...ended,
-        reveals: partial.reveals,
-        prompt: partial.prompt
-      };
+      return { ...ended, reveals: partial.reveals, prompt: partial.prompt };
     }
     return { room, reveals: partial.reveals, prompt: partial.prompt };
   }
 
   private assertPlayingTurn(room: GameRoom, playerId: string): void {
     const game = TurnService.requireGame(room);
-    if (game.phase !== 'playing') {
-      throw new Error('The game is not ready for that move.');
-    }
+    if (game.phase !== 'playing') throw new Error('الجيم مش جاهز للحركة دي.');
     TurnService.assertPlayersTurn(room, playerId);
     TurnService.assertTurnReady(room);
   }
 
   private requireDrawnBy(room: GameRoom, playerId: string) {
     const drawn = room.game?.drawnCard;
-    if (!drawn || drawn.playerId !== playerId) {
-      throw new Error('Draw a card first.');
-    }
+    if (!drawn || drawn.playerId !== playerId) throw new Error('اسحب كارت الأول.');
     return drawn;
   }
 
   private assertCardIndex(hand: CardInstance[], index: number): void {
-    if (!Number.isInteger(index) || index < 0 || index >= hand.length) {
-      throw new Error('Card index is not valid.');
-    }
+    if (!Number.isInteger(index) || index < 0 || index >= hand.length) throw new Error('رقم الكارت مش صح.');
   }
 
   private recycleIfNeeded(room: GameRoom): void {
     const game = TurnService.requireGame(room);
-    if (game.deck.length > 0) {
-      return;
-    }
-    if (game.discardPile.length <= 1) {
-      throw new Error('No cards are available to draw.');
-    }
+    if (game.deck.length > 0) return;
+    if (game.discardPile.length <= 1) throw new Error('مفيش كروت متاحة.');
     const top = game.discardPile.pop()!;
     game.deck = DeckService.shuffle(game.discardPile);
     game.discardPile = [top];
-    game.log.push('Discard pile reshuffled into the draw pile.');
+    game.log.push('الكروت اتخلطت من الأرض.');
   }
 
   private playerName(room: GameRoom, playerId: string): string {
-    return room.players.find((player) => player.id === playerId)?.nickname ?? 'A player';
-  }
-
-  private addWarning(room: GameRoom, playerId: string, reason: string, penaltyPoints: number): void {
-    const player = this.roomManager.requirePlayer(room, playerId);
-    player.warningCount += 1;
-    const shouldPunish = player.warningCount >= ILLEGAL_WARNING_LIMIT;
-    if (shouldPunish) {
-      player.penaltyPoints += penaltyPoints;
-    }
-    room.game?.log.push(shouldPunish ? `${player.nickname} ${reason} Penalty +${penaltyPoints}.` : `${player.nickname} warning: ${reason}`);
+    return room.players.find((p) => p.id === playerId)?.nickname ?? 'لاعب';
   }
 }

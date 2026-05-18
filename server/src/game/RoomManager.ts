@@ -31,6 +31,7 @@ export class RoomManager {
       createdAt: Date.now(),
       matchPoints: {},
       matchGamePoints: {},
+      matchWins: {},
       matchGamesPlayed: 0,
       pendingMatchReset: false
     };

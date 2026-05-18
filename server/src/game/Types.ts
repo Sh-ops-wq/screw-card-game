@@ -59,7 +59,7 @@ export interface GameState {
   pausedReason?: string;
   scores?: ScoreLine[];
   winnerId?: string;
-  /** Cards that have been peeked — eye icon shown to all players */
+  /** Cards that have been peeked - eye icon shown to all players */
   peekMarkers: PeekMarker[];
 }
 
@@ -72,6 +72,7 @@ export interface GameRoom {
   createdAt: number;
   matchPoints: Record<string, number>;
   matchGamePoints: Record<string, number[]>;
+  matchWins: Record<string, number>;
   matchGamesPlayed: number;
   pendingMatchReset: boolean;
 }

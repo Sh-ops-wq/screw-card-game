@@ -13,13 +13,13 @@ export class ScoringService {
       const playerState = room.game!.playerStates[player.id];
       const cards = playerState.hand.map((card) => toPublicCard(DeckService.getDefinition(card)));
       const cardTotal = playerState.hand.reduce((sum, card) => sum + DeckService.getDefinition(card).value, 0);
-      const total = cardTotal + player.penaltyPoints;
+      const total = cardTotal;
       return {
         playerId: player.id,
         nickname: player.nickname,
         total,
-        penaltyPoints: player.penaltyPoints,
-        warningCount: player.warningCount,
+        penaltyPoints: 0,
+        warningCount: 0,
         cards,
         isWinner: false,
         isScrewCaller: room.game!.screwCallerId === player.id

@@ -2,16 +2,12 @@ import { GAMES_PER_MATCH } from '../../../shared/gameConfig';
 import { randomInt } from 'node:crypto';
 import {
   ALLOW_MATCH_DISCARD,
-  ILLEGAL_ATTEMPT_PENALTY_POINTS,
-  ILLEGAL_WARNING_LIMIT,
   INITIAL_PEEK_COUNT,
   MAX_PLAYERS,
   MIN_PLAYERS,
   SCREW_UNLOCK_MS,
   START_WITH_HOST,
-  TIMEOUT_PENALTY_POINTS,
-  TURN_TIMEOUT_MS,
-  WRONG_MATCH_PENALTY_POINTS
+  TURN_TIMEOUT_MS
 } from './Constants';
 import { DeckService } from './DeckService';
 import { ActionService } from './ActionService';
@@ -84,6 +80,12 @@ export class GameManager {
       return { ownerId: playerId, index, card: ActionService.publicCard(playerState.hand[index]) };
     });
 
+    ActionService.applyPeekMarkers(room, indexes.map((index) => ({
+      ownerId: playerId,
+      index,
+      peekerId: playerId,
+      peekerName: player.nickname
+    })));
     player.initialPeekDone = true;
     game.log.push(`${player.nickname} خلص البصة الأولية.`);
     if (room.players.every((p) => p.initialPeekDone)) {
@@ -125,6 +127,7 @@ export class GameManager {
     const game = TurnService.requireGame(room);
     this.assertPlayingTurn(room, playerId);
     const drawn = this.requireDrawnBy(room, playerId);
+    if (this.isMandatoryActionDrawn(drawn)) throw new Error('Action cards must be used.');
     const playerState = game.playerStates[playerId];
     this.assertCardIndex(playerState.hand, replaceIndex);
 
@@ -149,16 +152,8 @@ export class GameManager {
     const game = TurnService.requireGame(room);
     this.assertPlayingTurn(room, playerId);
     const drawn = this.requireDrawnBy(room, playerId);
-
-    // ── MANDATORY ACTION: if card has an effect, force it ──────────────
-    if (drawn.source === 'deck') {
-      const def = DeckService.getDefinition(drawn.card);
-      if (def.effectType !== 'none' && def.effectType !== 'thief') {
-        // Auto-trigger the action instead of discarding
-        const result = ActionService.startDrawnCardAction(room, playerId);
-        return this.applyActionResult(room, result);
-      }
-    }
+    if (drawn.source === 'ground') throw new Error('A ground card must replace one of your cards.');
+    if (this.isMandatoryActionDrawn(drawn)) throw new Error('Action cards must be used.');
 
     game.discardPile.push(drawn.card);
     game.drawnCard = undefined;
@@ -225,6 +220,7 @@ export class GameManager {
     if (room.pendingMatchReset) {
       room.matchPoints = {};
       room.matchGamePoints = {};
+      room.matchWins = {};
       room.matchGamesPlayed = 0;
       room.pendingMatchReset = false;
     }
@@ -290,6 +286,9 @@ export class GameManager {
     game.scores = scores;
     const roundWinnerId = winner?.playerId ?? scores[0]?.playerId;
     game.winnerId = roundWinnerId;
+    if (roundWinnerId) {
+      room.matchWins[roundWinnerId] = (room.matchWins[roundWinnerId] ?? 0) + 1;
+    }
 
     for (const score of scores) {
       room.matchPoints[score.playerId] = (room.matchPoints[score.playerId] ?? 0) + score.total;
@@ -299,7 +298,10 @@ export class GameManager {
     room.matchGamesPlayed += 1;
 
     let matchWinnerId: string | undefined;
-    if (room.matchGamesPlayed >= GAMES_PER_MATCH) {
+    if (roundWinnerId && room.matchWins[roundWinnerId] >= GAMES_PER_MATCH) {
+      matchWinnerId = roundWinnerId;
+      room.pendingMatchReset = true;
+    } else if (room.matchGamesPlayed >= GAMES_PER_MATCH) {
       const sorted = Object.entries(room.matchPoints).sort((a, b) => a[1] - b[1]);
       matchWinnerId = sorted[0]?.[0];
       room.pendingMatchReset = true;
@@ -350,6 +352,10 @@ export class GameManager {
     const drawn = room.game?.drawnCard;
     if (!drawn || drawn.playerId !== playerId) throw new Error('اسحب كارت الأول.');
     return drawn;
+  }
+
+  private isMandatoryActionDrawn(drawn: { card: CardInstance; source: 'deck' | 'ground' }): boolean {
+    return drawn.source === 'deck' && DeckService.getDefinition(drawn.card).effectType !== 'none';
   }
 
   private assertCardIndex(hand: CardInstance[], index: number): void {

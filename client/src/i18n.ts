@@ -20,6 +20,7 @@ type TranslationKey =
   | 'drawnCard'
   | 'egyptianChaos'
   | 'fillBots'
+  | 'game'
   | 'ground'
   | 'host'
   | 'inviteLink'
@@ -30,6 +31,7 @@ type TranslationKey =
   | 'log'
   | 'matchChampion'
   | 'matchStandings'
+  | 'matchTotal'
   | 'nextTurn'
   | 'nickname'
   | 'optionalMoves'
@@ -62,7 +64,7 @@ const dictionary: Record<Language, Record<TranslationKey, string>> = {
   en: {
     actions: 'Actions',
     bot: 'Bot',
-    callScrew: 'Call Screw',
+    callScrew: 'SCREW',
     cardsLeft: 'left',
     chat: 'Chat',
     chooseCard: 'Choose a card',
@@ -77,8 +79,9 @@ const dictionary: Record<Language, Record<TranslationKey, string>> = {
     donePeeking: 'Done Peeking',
     drawFromDeck: 'Draw from Deck',
     drawnCard: 'Drawn Card',
-    egyptianChaos: 'Egyptian hidden-card chaos, built for friends around a desktop table.',
+    egyptianChaos: 'Egyptian hidden-card chaos, built for friends.',
     fillBots: 'Fill empty seats with Bots',
+    game: 'Game',
     ground: 'Ground',
     host: 'Host',
     inviteLink: 'Invite Link',
@@ -87,15 +90,16 @@ const dictionary: Record<Language, Record<TranslationKey, string>> = {
     keep: 'Keep',
     language: 'Language',
     log: 'Log',
-    matchChampion: 'Match champion',
-    matchStandings: 'Match standings',
+    matchChampion: 'Match Champion',
+    matchStandings: 'Match Standings',
+    matchTotal: 'Total',
     nextTurn: 'Next turn',
     nickname: 'Nickname',
     optionalMoves: 'Optional moves',
     playAgain: 'Play Again',
     players: 'players',
     privateTable: 'Private Table',
-    raceToNWins: 'First to {n} round wins takes the match',
+    raceToNWins: 'Best of {n} games - lowest total points wins',
     reserved: 'Reserved',
     roomCode: 'Room Code',
     roundClosedByScrew: 'Round sealed by Screw',
@@ -104,12 +108,12 @@ const dictionary: Record<Language, Record<TranslationKey, string>> = {
     send: 'Send',
     sound: 'Sound',
     stats: 'Stats',
-    thiefDisabled: 'Thief cannot fire anymore — Screw now ends the round immediately.',
+    thiefDisabled: 'Thief only works after Screw is called.',
     startGame: 'Start Game',
     takeFromGround: 'Take from Ground',
     turn: 'Turn',
     useAction: 'Use Action',
-    waiting: 'Waiting for players',
+    waiting: 'Waiting',
     winner: 'Winner',
     warnings: 'Warnings',
     yourHand: 'Your Hand',
@@ -118,7 +122,7 @@ const dictionary: Record<Language, Record<TranslationKey, string>> = {
   ar: {
     actions: 'الحركات',
     bot: 'بوت',
-    callScrew: 'قول سكرو',
+    callScrew: 'سكرو',
     cardsLeft: 'فاضل',
     chat: 'الشات',
     chooseCard: 'اختار كارت',
@@ -133,8 +137,9 @@ const dictionary: Record<Language, Record<TranslationKey, string>> = {
     donePeeking: 'خلصت',
     drawFromDeck: 'اسحب من القومة',
     drawnCard: 'الكارت المسحوب',
-    egyptianChaos: 'سكرو للأصحاب على ترابيزة ديسكتوب شيك.',
+    egyptianChaos: 'سكرو للأصحاب على ترابيزة ديسكتوب.',
     fillBots: 'كمّل العدد ببوتات',
+    game: 'جيم',
     ground: 'الأرض',
     host: 'الهوست',
     inviteLink: 'لينك الدعوة',
@@ -145,27 +150,28 @@ const dictionary: Record<Language, Record<TranslationKey, string>> = {
     log: 'اللوج',
     matchChampion: 'بطل الماتش',
     matchStandings: 'ترتيب الماتش',
+    matchTotal: 'المجموع',
     nextTurn: 'الدور الجاي',
     nickname: 'اسمك',
     optionalMoves: 'حركات اختيارية',
     playAgain: 'العب تاني',
-    players: 'لاعيبة',
+    players: 'لعيبة',
     privateTable: 'ترابيزة خاصة',
-    raceToNWins: 'أول واحد يوصل لـ {n} جولة يكسب الماتش',
+    raceToNWins: 'أحسن {n} جيمات - أقل نقاط يكسب',
     reserved: 'محجوز',
     roomCode: 'كود الروم',
-    roundClosedByScrew: 'الجولة اتقفلت بالسكرو',
+    roundClosedByScrew: 'الجولة اتقفلت بسكرو',
     roundComplete: 'الجولة خلصت',
     scoreboard: 'النتيجة',
     send: 'ابعت',
     sound: 'الصوت',
     stats: 'الإحصائيات',
-    thiefDisabled: 'حركة اللص مش شغالة هنا لأن السكرو بيقفل الجولة على طول.',
+    thiefDisabled: 'اللص بيشتغل بس بعد السكرو.',
     startGame: 'ابدأ اللعبة',
     takeFromGround: 'خد من الأرض',
     turn: 'الدور',
     useAction: 'استخدم الحركة',
-    waiting: 'مستنيين لاعيبة',
+    waiting: 'مستنيين',
     winner: 'الفائز',
     warnings: 'تحذيرات',
     yourHand: 'كروتك',
@@ -174,8 +180,8 @@ const dictionary: Record<Language, Record<TranslationKey, string>> = {
 };
 
 export const reactions: Record<Language, string[]> = {
-  en: ['Clean swap.', 'Sharp.'],
-  ar: ['لعبتهالها صح.', 'شاطر.']
+  en: ['Smart move!', 'Clean swap!', 'Big brain play!', 'Nice memory!', 'You cooked!'],
+  ar: ['حركة نضيفة!', 'لعبتها صح!', 'دماغ عالية!', 'جامدة يا نجم!', 'كده أنت بتطبخ!']
 };
 
 export function getT(language: Language): TFunction {

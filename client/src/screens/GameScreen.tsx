@@ -1,12 +1,12 @@
-import { Clock, Copy, Languages, ShieldAlert, Swords, Volume2, VolumeX } from 'lucide-react';
+import { Copy, DoorOpen, Eye, Languages, ShieldAlert, Volume2, VolumeX } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { Socket } from 'socket.io-client';
-import type { ActionPrompt, EmojiReaction, PrivatePlayerState, PublicCard, PublicGameState, PublicPlayer, RoundEndedPayload } from '../../../shared/types';
+import type { ActionPrompt, EmojiReaction, PeekMarker, PrivatePlayerState, PublicCard, PublicGameState, PublicPlayer, RoundEndedPayload } from '../../../shared/types';
 import { revealKey } from '../App';
 import { CardImage } from '../components/CardImage';
 import { ScoreboardModal } from '../components/ScoreboardModal';
 import { playSound } from '../game/sounds';
-import { reactions, type Language, type TFunction } from '../i18n';
+import { type Language, type TFunction } from '../i18n';
 
 interface GameScreenProps {
   socket: Socket;
@@ -27,22 +27,7 @@ interface GameScreenProps {
 
 type HandMode = 'idle' | 'keep' | 'match' | 'peek-own' | 'swap-own';
 
-export function GameScreen({
-  socket,
-  identity,
-  game,
-  privateState,
-  reveals,
-  prompt,
-  emojiReactions,
-  roundEnded,
-  language,
-  t,
-  soundEnabled,
-  onLanguageChange,
-  onSoundToggle,
-  onCloseScoreboard
-}: GameScreenProps) {
+export function GameScreen({ socket, identity, game, privateState, reveals, prompt, emojiReactions, roundEnded, language, t, soundEnabled, onLanguageChange, onSoundToggle, onCloseScoreboard }: GameScreenProps) {
   const [now, setNow] = useState(Date.now());
   const [handMode, setHandMode] = useState<HandMode>('idle');
   const [initialPeek, setInitialPeek] = useState<number[]>([]);
@@ -50,610 +35,415 @@ export function GameScreen({
   const [logOpen, setLogOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [chatDraft, setChatDraft] = useState('');
-  const [reactionMessage, setReactionMessage] = useState<string | null>(null);
-  const lastTurnSignal = useRef<string>('');
-  const lastReactionAt = useRef(0);
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
+  const [eyeAnim, setEyeAnim] = useState(false);
+  const [cardFlashIndex, setCardFlashIndex] = useState<number | null>(null);
+  const lastTurnSignal = useRef('');
+  const gameStartTime = useRef(Date.now());
 
+  /* ── Clock + exit button timer ── */
   useEffect(() => {
-    const interval = window.setInterval(() => setNow(Date.now()), 500);
-    return () => window.clearInterval(interval);
+    const id = window.setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+    return () => window.clearInterval(id);
   }, []);
 
   useEffect(() => {
-    if (privateState.drawnCardSource === 'ground' && privateState.drawnCard) {
-      setHandMode('keep');
+    if (game.roundStartedAt) {
+      gameStartTime.current = game.roundStartedAt;
       return;
     }
-    if (!privateState.drawnCard && handMode === 'keep') {
-      setHandMode('idle');
+    if (game.phase === 'initialPeek') {
+      gameStartTime.current = Date.now();
     }
-    if (!prompt) {
-      setHandMode((mode) => (mode === 'peek-own' || mode === 'swap-own' ? 'idle' : mode));
-      setPeekAroundSelection([]);
-    }
+  }, [game.phase, game.roundStartedAt]);
+
+  /* ── Hand mode sync ── */
+  useEffect(() => {
+    if (privateState.drawnCardSource === 'ground' && privateState.drawnCard) { setHandMode('keep'); return; }
+    if (!privateState.drawnCard && handMode === 'keep') setHandMode('idle');
+    if (!prompt) { setHandMode(m => (m === 'peek-own' || m === 'swap-own' ? 'idle' : m)); setPeekAroundSelection([]); }
   }, [handMode, privateState.drawnCard, privateState.drawnCardSource, prompt]);
 
+  /* ── Turn sound ── */
   useEffect(() => {
-    if (!game.turnReadyAt || game.turnReadyAt <= Date.now() || !game.currentPlayerId) {
-      return;
-    }
-
-    const signal = `${game.currentPlayerId}:${game.turnReadyAt}`;
-    if (lastTurnSignal.current === signal) {
-      return;
-    }
-
-    lastTurnSignal.current = signal;
+    if (!game.turnReadyAt || !game.currentPlayerId) return;
+    const sig = `${game.currentPlayerId}:${game.turnReadyAt}`;
+    if (lastTurnSignal.current === sig) return;
+    lastTurnSignal.current = sig;
     playSound('turn');
   }, [game.currentPlayerId, game.turnReadyAt]);
 
+  /* ── Auto-trigger mandatory action cards (client-side enforcement) ── */
   useEffect(() => {
-    const latest = game.log.at(-1);
-    if (!latest) {
-      return;
-    }
+    if (!privateState.drawnCard || !privateState.canAct || privateState.drawnCardSource !== 'deck') return;
+    const e = privateState.drawnCard.effectType;
+    if (e === 'none') return;
+    const id = window.setTimeout(() => { socket.emit('useDrawnCardAction'); playSound('button'); }, 750);
+    return () => window.clearTimeout(id);
+  }, [privateState.drawnCard, privateState.canAct, privateState.drawnCardSource, socket]);
 
-    const worthyMove = /swapped|kept|Thief|Screw|Basra|Peek|matched|ground|wins/i.test(latest);
-    const readyForToast = Date.now() - lastReactionAt.current >= 15000;
-    if (!worthyMove || !readyForToast || Math.random() > 0.18) {
-      return;
-    }
+  /* ── Eye animation on action phase ── */
+  useEffect(() => {
+    if (game.phase !== 'action') return;
+    setEyeAnim(true);
+    const id = window.setTimeout(() => setEyeAnim(false), 1800);
+    return () => window.clearTimeout(id);
+  }, [game.phase]);
 
-    const pool = reactions[language];
-    const next = pool[Math.floor(Math.random() * pool.length)];
-    lastReactionAt.current = Date.now();
-    setReactionMessage(next);
-    window.setTimeout(() => setReactionMessage(null), 2600);
-  }, [game.log, language]);
+  /* ── Card flash on reveal ── */
+  useEffect(() => {
+    const mine = Object.keys(reveals).find(k => k.startsWith(identity.playerId + ':'));
+    if (!mine) return;
+    const idx = parseInt(mine.split(':')[1], 10);
+    setCardFlashIndex(idx);
+    const id = window.setTimeout(() => setCardFlashIndex(null), 900);
+    return () => window.clearTimeout(id);
+  }, [reveals, identity.playerId]);
 
-  const me = game.players.find((player) => player.id === identity.playerId);
-  const otherPlayers = game.players.filter((player) => player.id !== identity.playerId);
-  const currentPlayer = game.players.find((player) => player.id === game.currentPlayerId);
-  const screwSeconds = Math.max(0, Math.ceil(((game.screwUnlockAt ?? now) - now) / 1000));
+  const me = game.players.find(p => p.id === identity.playerId);
+  const otherPlayers = game.players.filter(p => p.id !== identity.playerId);
+  const currentPlayer = game.players.find(p => p.id === game.currentPlayerId);
   const isHost = game.hostId === identity.playerId;
   const isMyTurn = game.currentPlayerId === identity.playerId;
   const isInitialPeek = game.phase === 'initialPeek' && privateState.needsInitialPeek;
-  const needsReplacement = handMode === 'keep' || privateState.drawnCardSource === 'ground';
   const isTurnTransitioning = Boolean(game.turnReadyAt && now < game.turnReadyAt && game.phase === 'playing');
   const turnStartsIn = Math.max(0, Math.ceil(((game.turnReadyAt ?? now) - now) / 1000));
   const canStartTurn = isMyTurn && !isTurnTransitioning && game.phase === 'playing' && !privateState.drawnCard && !prompt;
   const canDraw = privateState.canDraw || canStartTurn;
-  const canTakeGround = privateState.canTakeGround || (canStartTurn && Boolean(game.discardTop));
-  const canCallScrew = privateState.canCallScrew || (game.phase === 'playing' && !isTurnTransitioning && !game.finalRound && now >= (game.screwUnlockAt ?? Number.POSITIVE_INFINITY));
-  const turnSecondsLeft = game.turnExpiresAt && game.phase !== 'roundEnded' ? Math.max(0, Math.ceil((game.turnExpiresAt - now) / 1000)) : 0;
+  const canTakeGround = (privateState.canTakeGround || (canStartTurn && Boolean(game.discardTop)));
+  /* SCREW always unlocked (SCREW_UNLOCK_MS = 0) */
+  const canCallScrew = privateState.canCallScrew || (game.phase === 'playing' && !isTurnTransitioning && !game.finalRound && now >= (game.screwUnlockAt ?? 0));
+  const needsReplacement = handMode === 'keep' || privateState.drawnCardSource === 'ground';
+  const showExitBtn = game.phase !== 'lobby' && now - gameStartTime.current >= 90_000;
 
-  const handCards = privateState.hand.map((slot) => ({
-    ...slot,
-    revealedCard: reveals[revealKey(identity.playerId, slot.index)]?.card ?? slot.card
-  }));
+  const handCards = privateState.hand.map(slot => ({ ...slot, revealedCard: reveals[revealKey(identity.playerId, slot.index)]?.card ?? slot.card }));
+  const myPeekMarkers = (game.peekMarkers ?? []).filter(m => m.ownerId === identity.playerId);
+  const recentChatByPlayer = (game.chatMessages ?? [])
+    .filter(m => Date.now() - m.createdAt < 28_000)
+    .reduce<Record<string, string>>((acc, m) => { acc[m.playerId] = m.message; return acc; }, {});
 
   function handleOwnCard(index: number) {
     if (isInitialPeek) {
-      const next = initialPeek.includes(index)
-        ? initialPeek.filter((item) => item !== index)
-        : initialPeek.length >= 2
-          ? [initialPeek[1], index]
-          : [...initialPeek, index];
-
+      const next = initialPeek.includes(index) ? initialPeek.filter(i => i !== index) : initialPeek.length >= 2 ? [initialPeek[1], index] : [...initialPeek, index];
       setInitialPeek(next);
-      if (next.length === 2) {
-        window.setTimeout(() => {
-          socket.emit('chooseInitialPeek', { cardIndexes: next });
-          setInitialPeek([]);
-        }, 280);
-      }
+      if (next.length === 2) { window.setTimeout(() => { socket.emit('chooseInitialPeek', { cardIndexes: next }); setInitialPeek([]); }, 280); }
       return;
     }
-
-    if (handMode === 'keep') {
-      socket.emit('keepDrawnCard', { replaceIndex: index });
-      playSound('swap');
-      setHandMode('idle');
-      return;
-    }
-
-    if (handMode === 'match') {
-      socket.emit('matchDiscard', { cardIndex: index });
-      setHandMode('idle');
-      return;
-    }
-
-    if (prompt?.type === 'selectOwnCard') {
-      socket.emit('chooseOwnCard', { cardIndex: index });
-      return;
-    }
-
-    if (prompt?.type === 'confirmSwap' || handMode === 'swap-own') {
-      socket.emit('confirmSwap', {
-        swap: true,
-        targetPlayerId: prompt?.targetPlayerId,
-        targetCardIndex: prompt?.targetCardIndex,
-        ownCardIndex: index
-      });
-      playSound('swap');
-      setHandMode('idle');
-      return;
-    }
-
+    if (handMode === 'keep') { socket.emit('keepDrawnCard', { replaceIndex: index }); playSound('swap'); setHandMode('idle'); return; }
+    if (handMode === 'match') { socket.emit('matchDiscard', { cardIndex: index }); setHandMode('idle'); return; }
+    if (prompt?.type === 'selectOwnCard') { socket.emit('chooseOwnCard', { cardIndex: index }); return; }
+    if (prompt?.type === 'confirmSwap' || handMode === 'swap-own') { socket.emit('confirmSwap', { swap: true, targetPlayerId: prompt?.targetPlayerId, targetCardIndex: prompt?.targetCardIndex, ownCardIndex: index }); playSound('swap'); setHandMode('idle'); return; }
     if (handMode === 'peek-own' && prompt?.type === 'selectPeekAroundOption') {
-      setPeekAroundSelection((current) => {
-        const next = current.includes(index) ? current.filter((item) => item !== index) : [...current, index].slice(-2);
-        if (next.length === 2) {
-          socket.emit('chooseActionOption', { option: 'own', cardIndexes: next });
-          setHandMode('idle');
-          return [];
-        }
+      setPeekAroundSelection(cur => {
+        const next = cur.includes(index) ? cur.filter(i => i !== index) : [...cur, index].slice(-2);
+        if (next.length === 2) { socket.emit('chooseActionOption', { option: 'own', cardIndexes: next }); setHandMode('idle'); return []; }
         return next;
       });
       return;
     }
-
-    if (!privateState.drawnCard && !prompt && game.phase === 'playing') {
-      socket.emit('matchDiscard', { cardIndex: index });
-      playSound('button');
-      return;
-    }
+    if (!privateState.drawnCard && !prompt && game.phase === 'playing') socket.emit('matchDiscard', { cardIndex: index });
   }
 
   function handleOtherCard(playerId: string, cardIndex: number) {
-    if (prompt?.type === 'selectTargetCard') {
-      socket.emit('chooseTargetCard', { targetPlayerId: playerId, cardIndex });
-    }
-  }
-
-  function drawFromDeck() {
-    playSound('button');
-    socket.emit('drawCard');
-  }
-
-  function takeFromGround() {
-    playSound('button');
-    socket.emit('takeGroundCard');
-  }
-
-  function copyRoom() {
-    navigator.clipboard.writeText(`${window.location.origin}/?room=${game.roomCode}`).catch(() => undefined);
-    playSound('button');
+    if (prompt?.type === 'selectTargetCard') socket.emit('chooseTargetCard', { targetPlayerId: playerId, cardIndex });
   }
 
   function sendChat() {
-    const message = chatDraft.trim();
-    if (!message) {
-      return;
-    }
-    socket.emit('sendChat', { message });
+    const msg = chatDraft.trim();
+    if (!msg) return;
+    socket.emit('sendChat', { message: msg });
     setChatDraft('');
     playSound('button');
   }
 
-  function sendReaction(emoji: string) {
-    socket.emit('sendReaction', { emoji });
-    playSound('button');
-  }
+  function leaveGame() { socket.disconnect(); window.location.reload(); }
 
   return (
     <main className="game-table-screen" dir={language === 'ar' ? 'rtl' : 'ltr'}>
+
+      {/* ── 👁 Eye animation ── */}
+      {eyeAnim && <div className="eye-overlay" aria-hidden><div className="eye-anim"><Eye size={54} /></div></div>}
+
+      {/* ── 🚪 Exit confirm ── */}
+      {showExitConfirm && (
+        <div className="exit-confirm-overlay">
+          <div className="exit-confirm-box">
+            <h3>خروج من الجيم؟</h3>
+            <p>{language === 'ar' ? 'هتطلع من الروم بعد التأكيد.' : 'Confirm before leaving the room.'}</p>
+            <div className="exit-confirm-btns">
+              <button className="exit-confirm-yes" onClick={leaveGame}>خروج</button>
+              <button className="exit-confirm-no" onClick={() => setShowExitConfirm(false)}>رجوع</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── HUD ── */}
       <header className="table-hud">
         <div className="hud-pill">
-          <span>{t('roomCode')}</span>
-          <strong>{game.roomCode}</strong>
-          <button className="hud-icon" type="button" onClick={copyRoom} aria-label={t('copyInvite')}>
-            <Copy size={15} />
-          </button>
+          <span>{t('roomCode')}</span><strong>{game.roomCode}</strong>
+          <button className="hud-icon" type="button" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/?room=${game.roomCode}`).catch(() => undefined); playSound('button'); }} aria-label={t('copyInvite')}><Copy size={15} /></button>
         </div>
-        <div className="hud-pill">
-          <Clock size={16} />
-          <strong>{game.screwUnlocked ? 'Screw' : formatTime(screwSeconds)}</strong>
-        </div>
-        <div className="hud-pill screw-word-pill">
-          <strong>SCREW / سكرو</strong>
-        </div>
+        <div className="hud-pill screw-word-pill"><strong>SCREW</strong></div>
         <div className={isMyTurn ? 'hud-pill hud-pill--turn' : 'hud-pill'}>
-          <span>{isMyTurn ? t('yourTurn') : t('turn')}</span>
-          <strong>{currentPlayer?.nickname ?? t('waiting')}</strong>
-          {turnSecondsLeft ? <em>{turnSecondsLeft}s</em> : null}
+          <span>{isMyTurn ? t('yourTurn') : t('turn')}</span><strong>{currentPlayer?.nickname ?? t('waiting')}</strong>
         </div>
         <div className="hud-actions">
-          <button className="hud-icon" type="button" onClick={() => onLanguageChange(language === 'en' ? 'ar' : 'en')} aria-label={t('language')}>
-            <Languages size={15} />
-          </button>
-          <button className="hud-icon" type="button" onClick={onSoundToggle} aria-label={t('sound')}>
-            {soundEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
-          </button>
-          {canCallScrew ? (
-            <button className="screw-hud-button" type="button" onClick={() => socket.emit('callScrew')}>
-              <Swords size={16} /> {t('callScrew')}
-            </button>
-          ) : null}
+          <button className="hud-icon" type="button" onClick={() => onLanguageChange(language === 'en' ? 'ar' : 'en')} aria-label={t('language')}><Languages size={15} /></button>
+          <button className="hud-icon" type="button" onClick={onSoundToggle} aria-label={t('sound')}>{soundEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}</button>
+          {showExitBtn && <button className="hud-icon hud-exit" type="button" onClick={() => setShowExitConfirm(true)} aria-label="خروج"><DoorOpen size={15} /></button>}
         </div>
       </header>
 
       <section className="card-table-stage">
         <div className="felt-table">
-          {otherPlayers.map((player, index) => (
-            <OpponentSeat
-              key={player.id}
-              player={player}
-              position={seatPosition(index, otherPlayers.length)}
+          {otherPlayers.map((player, idx) => (
+            <OpponentSeat key={player.id} player={player}
+              position={seatPosition(idx, otherPlayers.length)}
               isCurrent={player.id === game.currentPlayerId}
-              reveals={reveals}
-              onCardClick={handleOtherCard}
-              t={t}
-              reactions={emojiReactions.filter((reaction) => reaction.playerId === player.id)}
+              reveals={reveals} onCardClick={handleOtherCard} t={t}
+              reactions={emojiReactions.filter(r => r.playerId === player.id)}
+              peekMarkers={(game.peekMarkers ?? []).filter(m => m.ownerId === player.id)}
+              recentChat={recentChatByPlayer[player.id]}
+              isPeekTarget={game.phase === 'action' && prompt?.targetPlayerId === player.id}
             />
           ))}
 
           <div className="center-play-area">
             <div className="table-state">
-              <span>{isTurnTransitioning ? t('nextTurn') : phaseTitle(game.phase, isMyTurn, t)}</span>
+              <span>{phaseTitle(game.phase, isMyTurn, t)}</span>
               <strong>{currentPlayer?.nickname ?? t('waiting')}</strong>
-              <b>سكرو</b>
             </div>
 
             <div className="center-piles">
               <div className={canDraw ? 'table-pile is-live' : 'table-pile'}>
-                <CardImage hidden onClick={canDraw ? drawFromDeck : undefined} selectable={canDraw} size="medium" />
-                <span>{t('drawFromDeck')}</span>
-                <em>{game.drawPileCount} {t('cardsLeft')}</em>
+                <CardImage hidden onClick={canDraw ? () => { playSound('button'); socket.emit('drawCard'); } : undefined} selectable={canDraw} size="medium" />
+                <span>{t('drawFromDeck')}</span><em>{game.drawPileCount} {t('cardsLeft')}</em>
               </div>
-
               <div className={canTakeGround ? 'table-pile is-live' : 'table-pile'}>
-                <CardImage cardId={game.discardTop?.id} hidden={!game.discardTop} onClick={canTakeGround ? takeFromGround : undefined} selectable={canTakeGround} size="medium" />
+                <CardImage cardId={game.discardTop?.id} hidden={!game.discardTop} onClick={canTakeGround ? () => { playSound('button'); socket.emit('takeGroundCard'); } : undefined} selectable={canTakeGround} size="medium" />
                 <span>{t('takeFromGround')}</span>
               </div>
             </div>
 
-            {isTurnTransitioning ? (
+            {isTurnTransitioning && (
               <div className="turn-transition-bubble">
-                <span>{t('nextTurn')}</span>
-                <strong>{currentPlayer?.nickname ?? t('waiting')}</strong>
-                <em>{turnStartsIn}</em>
+                <span>{t('nextTurn')}</span><strong>{currentPlayer?.nickname ?? t('waiting')}</strong><em>{turnStartsIn}</em>
               </div>
-            ) : null}
+            )}
 
-            {privateState.drawnCard ? (
-              <DrawnCardControls
-                card={privateState.drawnCard}
-                source={privateState.drawnCardSource}
-                canAct={privateState.canAct}
-                game={game}
-                handMode={handMode}
-                t={t}
+            {/* Auto-triggered card action badge */}
+            {privateState.drawnCard && privateState.canAct && privateState.drawnCardSource === 'deck' &&
+             privateState.drawnCard.effectType !== 'none' ? (
+              <div className="drawn-floating drawn-floating--auto drawn-floating--deck-pulse">
+                <CardImage cardId={privateState.drawnCard.id} size="large" />
+                <div className="auto-action-badge">⚡ {t('useAction')}</div>
+              </div>
+            ) : privateState.drawnCard ? (
+              <DrawnCardControls card={privateState.drawnCard} source={privateState.drawnCardSource} canAct={privateState.canAct}
+                handMode={handMode} t={t}
                 onUse={() => socket.emit('useDrawnCardAction')}
                 onKeep={() => setHandMode('keep')}
-                onDiscard={() => {
-                  socket.emit('discardDrawnCard');
-                  playSound('discard');
-                }}
+                onDiscard={() => { socket.emit('discardDrawnCard'); playSound('discard'); }}
               />
             ) : null}
 
-            {prompt ? (
-              <ActionPromptBubble
-                prompt={prompt}
-                players={otherPlayers}
-                handMode={handMode}
-                setHandMode={setHandMode}
-                t={t}
-                onTarget={(targetPlayerId) => socket.emit('chooseTargetPlayer', { targetPlayerId })}
+            {prompt && (
+              <ActionPromptBubble prompt={prompt} players={otherPlayers} handMode={handMode} setHandMode={setHandMode} t={t}
+                onTarget={id => socket.emit('chooseTargetPlayer', { targetPlayerId: id })}
                 onPeekOthers={() => socket.emit('chooseActionOption', { option: 'others' })}
                 onSkipSwap={() => socket.emit('confirmSwap', { swap: false })}
               />
-            ) : null}
+            )}
 
-            {game.finalRound && game.phase !== 'roundEnded' ? (
+            {game.finalRound && game.phase !== 'roundEnded' && (
               <div className="final-round-banner table-final-banner">
-                <ShieldAlert size={18} /> {t('roundClosedByScrew')}: {game.players.find((player) => player.id === game.screwCallerId)?.nickname ?? t('winner')}
+                <ShieldAlert size={18} /> {t('roundClosedByScrew')}: {game.players.find(p => p.id === game.screwCallerId)?.nickname ?? t('winner')}
               </div>
-            ) : null}
+            )}
           </div>
         </div>
 
+        {/* ── My hand ── */}
         <section className={needsReplacement ? 'player-hand-bar is-selecting' : 'player-hand-bar'}>
           <div className="player-hand-title">
-            <span>{t('yourHand')}</span>
-            <strong>{me?.nickname ?? identity.nickname}</strong>
-            {me?.warningCount ? <em>{t('warnings')}: {me.warningCount}</em> : null}
+            <span>{t('yourHand')}</span><strong>{me?.nickname ?? identity.nickname}</strong>
+            {recentChatByPlayer[identity.playerId] && <div className="player-chat-bubble player-chat-bubble--me">{recentChatByPlayer[identity.playerId]}</div>}
           </div>
-
           <div className="player-hand-cards">
-            {handCards.map((slot) => (
-              <CardImage
-                cardId={slot.revealedCard?.id}
-                key={slot.index}
-                hidden={!slot.revealedCard}
-                selected={initialPeek.includes(slot.index) || peekAroundSelection.includes(slot.index)}
-                selectable
-                size="large"
-                onClick={() => handleOwnCard(slot.index)}
-              />
-            ))}
+            {handCards.map(slot => {
+              const hasPeek = myPeekMarkers.some(m => m.index === slot.index);
+              const peekerName = myPeekMarkers.find(m => m.index === slot.index)?.peekerName;
+              const isFlashing = cardFlashIndex === slot.index;
+              return (
+                <div key={slot.index} className={`card-slot-wrap${isFlashing ? ' card-flip-anim' : ''}`}>
+                  <CardImage cardId={slot.revealedCard?.id} hidden={!slot.revealedCard}
+                    selected={initialPeek.includes(slot.index) || peekAroundSelection.includes(slot.index)}
+                    selectable size="large" onClick={() => handleOwnCard(slot.index)} />
+                  {hasPeek && <div className="peek-eye-badge" title={peekerName ? `${peekerName} saw this card` : 'Seen card'}><Eye size={15} /></div>}
+                </div>
+              );
+            })}
           </div>
-
           <p className="table-hint">{handHint(game.phase, privateState, prompt, handMode, canDraw, canTakeGround, isTurnTransitioning, t)}</p>
         </section>
 
-        {reactionMessage ? <div className="fun-toast">{reactionMessage}</div> : null}
-
+        {/* ── Chat & Log ── */}
         <div className="table-log-shell">
           <div className="reaction-rail">
-            {['🔥', '😂', '😈', '🧠', '👏', '💀', '👀', '⚡'].map((emoji) => (
-              <button key={emoji} type="button" onClick={() => sendReaction(emoji)}>{emoji}</button>
+            {['🔥','😂','😈','🧠','👏','💀','👀','⚡'].map(e => (
+              <button key={e} type="button" onClick={() => { socket.emit('sendReaction', { emoji: e }); playSound('button'); }}>{e}</button>
             ))}
           </div>
-          {emojiReactions.filter((reaction) => reaction.playerId === identity.playerId).map((reaction) => (
-            <div className="reaction-pop reaction-pop--me" key={reaction.id}>{reaction.emoji}</div>
-          ))}
-          <button className="log-toggle" type="button" onClick={() => setChatOpen((open) => !open)}>
-            {t('chat')}
-          </button>
-          {chatOpen ? (
+          <button className="log-toggle" type="button" onClick={() => setChatOpen(o => !o)}>{t('chat')} {Object.keys(recentChatByPlayer).length > 0 ? '💬' : ''}</button>
+          {chatOpen && (
             <div className="chat-panel">
               <div className="chat-messages">
-                {(game.chatMessages ?? []).slice(-8).map((message) => (
-                  <p key={message.id}><strong>{message.nickname}</strong> {message.message}</p>
+                {(game.chatMessages ?? []).slice(-12).map(msg => (
+                  <p key={msg.id} className={msg.playerId === identity.playerId ? 'chat-mine' : ''}>
+                    <strong>{msg.nickname}:</strong> {msg.message}
+                  </p>
                 ))}
               </div>
               <div className="chat-compose">
-                <input
-                  value={chatDraft}
-                  maxLength={160}
-                  onChange={(event) => setChatDraft(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      sendChat();
-                    }
-                  }}
-                  placeholder={t('chat')}
-                />
+                <input value={chatDraft} maxLength={160} onChange={e => setChatDraft(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') sendChat(); }} placeholder={t('chat')} />
                 <button type="button" onClick={sendChat}>{t('send')}</button>
               </div>
             </div>
-          ) : null}
-          <button className="log-toggle" type="button" onClick={() => setLogOpen((open) => !open)}>
-            {t('log')}
-          </button>
+          )}
+          <button className="log-toggle" type="button" onClick={() => setLogOpen(o => !o)}>{t('log')}</button>
           {logOpen ? (
-            <div className="compact-log">
-              {game.log.slice(-8).map((entry, index) => (
-                <p key={`${entry}-${index}`}>{entry}</p>
-              ))}
-            </div>
+            <div className="compact-log">{game.log.slice(-10).map((e, i) => <p key={i}>{e}</p>)}</div>
           ) : (
             <div className="table-log-ticker">{game.log.at(-1) ?? t('waiting')}</div>
           )}
         </div>
       </section>
 
-      {game.phase === 'paused' ? <div className="pause-banner">{game.pausedReason ?? 'Round paused.'}</div> : null}
+      {game.phase === 'paused' && <div className="pause-banner">{game.pausedReason ?? 'متوقف.'}</div>}
 
-      <ScoreboardModal payload={roundEnded} onClose={onCloseScoreboard} onRestart={() => socket.emit('restartRound')} canRestart={isHost} t={t} />
+      {/* ══ BIG SCREW BUTTON ══ */}
+      {canCallScrew && (
+        <button className="screw-call-btn" type="button"
+          onClick={() => { socket.emit('callScrew'); playSound('button'); }}
+          aria-label={t('callScrew')}>
+          {t('callScrew')}
+        </button>
+      )}
+
+      <ScoreboardModal payload={roundEnded} onClose={onCloseScoreboard}
+        onRestart={() => socket.emit('restartRound')} canRestart={isHost} t={t} />
     </main>
   );
 }
 
-function DrawnCardControls({
-  card,
-  source,
-  canAct,
-  game,
-  handMode,
-  t,
-  onUse,
-  onKeep,
-  onDiscard
-}: {
-  card: PublicCard;
-  source: 'deck' | 'ground' | null;
-  canAct: boolean;
-  game: PublicGameState;
-  handMode: HandMode;
-  t: TFunction;
-  onUse: () => void;
-  onKeep: () => void;
-  onDiscard: () => void;
+/* ── DrawnCardControls ── */
+function DrawnCardControls({ card, source, canAct, handMode, t, onUse, onKeep, onDiscard }: {
+  card: PublicCard; source: 'deck' | 'ground' | null; canAct: boolean;
+  handMode: HandMode; t: TFunction; onUse: () => void; onKeep: () => void; onDiscard: () => void;
 }) {
-  if (source === 'ground') {
-    return (
-      <div className="drawn-floating drawn-floating--ground">
-        <CardImage cardId={card.id} size="large" />
-        <strong>{t('chooseCard')}</strong>
-        <span>{t('takeFromGround')}</span>
-      </div>
-    );
-  }
-
-  const actionReason = getActionReason(card, source, canAct, game, t);
-
+  if (source === 'ground') return (
+    <div className="drawn-floating drawn-floating--ground">
+      <CardImage cardId={card.id} size="large" />
+      <strong>{t('chooseCard')}</strong><span>{t('takeFromGround')}</span>
+    </div>
+  );
+  const isMandatory = source === 'deck' && card.effectType !== 'none';
   return (
     <div className="drawn-floating">
       <CardImage cardId={card.id} size="large" />
       <div className="drawn-buttons">
-        <button className="clean-action" type="button" disabled={!canAct} onClick={onKeep}>
-          {handMode === 'keep' ? t('chooseCard') : t('keep')}
-        </button>
-        <button className="clean-action" type="button" disabled={!canAct} onClick={onDiscard}>
-          {t('discard')}
-        </button>
-        <button className="clean-action" type="button" title={actionReason || t('useAction')} disabled={Boolean(actionReason)} onClick={onUse}>
-          {t('useAction')}
-        </button>
+        {isMandatory ? (
+          <button className="clean-action clean-action--highlight" type="button" disabled={!canAct} onClick={onUse}>⚡ {t('useAction')}</button>
+        ) : (
+          <>
+            <button className="clean-action" type="button" disabled={!canAct} onClick={onKeep}>{handMode === 'keep' ? t('chooseCard') : t('keep')}</button>
+            <button className="clean-action" type="button" disabled={!canAct} onClick={onDiscard}>{t('discard')}</button>
+          </>
+        )}
       </div>
     </div>
   );
 }
 
-function ActionPromptBubble({
-  prompt,
-  players,
-  handMode,
-  setHandMode,
-  t,
-  onTarget,
-  onPeekOthers,
-  onSkipSwap
-}: {
-  prompt: ActionPrompt;
-  players: PublicPlayer[];
-  handMode: HandMode;
-  setHandMode: (mode: HandMode) => void;
-  t: TFunction;
-  onTarget: (targetPlayerId: string) => void;
-  onPeekOthers: () => void;
-  onSkipSwap: () => void;
+/* ── ActionPromptBubble ── */
+function ActionPromptBubble({ prompt, players, handMode, setHandMode, t, onTarget, onPeekOthers, onSkipSwap }: {
+  prompt: ActionPrompt; players: PublicPlayer[]; handMode: HandMode; setHandMode: (m: HandMode) => void; t: TFunction;
+  onTarget: (id: string) => void; onPeekOthers: () => void; onSkipSwap: () => void;
 }) {
   return (
-    <div className="action-bubble">
+    <div className="action-bubble action-bubble--glow">
       <strong>{prompt.message}</strong>
-      {prompt.type === 'selectTargetPlayer' ? (
+      {prompt.type === 'selectTargetPlayer' && (
+        <div className="bubble-buttons">{players.map(p => <button className="clean-action" key={p.id} type="button" onClick={() => onTarget(p.id)}>{p.nickname}</button>)}</div>
+      )}
+      {prompt.type === 'selectPeekAroundOption' && (
         <div className="bubble-buttons">
-          {players.map((player) => (
-            <button className="clean-action" key={player.id} type="button" onClick={() => onTarget(player.id)}>
-              {player.nickname}
-            </button>
-          ))}
+          <button className="clean-action" type="button" onClick={() => setHandMode(handMode === 'peek-own' ? 'idle' : 'peek-own')}>{t('chooseCard')} x2</button>
+          <button className="clean-action" type="button" onClick={onPeekOthers}>{t('choosePlayer')}</button>
         </div>
-      ) : null}
-      {prompt.type === 'selectPeekAroundOption' ? (
+      )}
+      {prompt.type === 'confirmSwap' && (
         <div className="bubble-buttons">
-          <button className="clean-action" type="button" onClick={() => setHandMode(handMode === 'peek-own' ? 'idle' : 'peek-own')}>
-            {t('chooseCard')} x2
-          </button>
-          <button className="clean-action" type="button" onClick={onPeekOthers}>
-            {t('choosePlayer')}
-          </button>
+          <button className="clean-action" type="button" onClick={() => setHandMode('swap-own')}>{t('chooseCard')}</button>
+          <button className="clean-action" type="button" onClick={onSkipSwap}>{t('discard')}</button>
         </div>
-      ) : null}
-      {prompt.type === 'confirmSwap' ? (
-        <div className="bubble-buttons">
-          <button className="clean-action" type="button" onClick={() => setHandMode('swap-own')}>
-            {t('chooseCard')}
-          </button>
-          <button className="clean-action" type="button" onClick={onSkipSwap}>
-            {t('discard')}
-          </button>
-        </div>
-      ) : null}
+      )}
     </div>
   );
 }
 
-function OpponentSeat({
-  player,
-  position,
-  isCurrent,
-  reveals,
-  onCardClick,
-  t,
-  reactions
-}: {
-  player: PublicPlayer;
-  position: string;
-  isCurrent: boolean;
+/* ── OpponentSeat ── */
+function OpponentSeat({ player, position, isCurrent, reveals, onCardClick, t, reactions, peekMarkers, recentChat, isPeekTarget }: {
+  player: PublicPlayer; position: string; isCurrent: boolean;
   reveals: Record<string, { card: PublicCard; expiresAt: number }>;
-  onCardClick: (playerId: string, cardIndex: number) => void;
-  t: TFunction;
-  reactions: EmojiReaction[];
+  onCardClick: (playerId: string, cardIndex: number) => void; t: TFunction;
+  reactions: EmojiReaction[]; peekMarkers: PeekMarker[]; recentChat?: string; isPeekTarget?: boolean;
 }) {
-  const vertical = position === 'left' || position === 'right';
-
   return (
-    <section className={['table-seat', `table-seat--${position}`, isCurrent ? 'is-current' : '', vertical ? 'is-side-seat' : ''].join(' ')}>
-      <div className="table-seat-name">
-        <strong>{player.nickname}</strong>
-        <span>{player.handSize}</span>
-        {player.warningCount ? <small>⚠ {player.warningCount}</small> : null}
-      </div>
-      {reactions.map((reaction) => (
-        <div className="reaction-pop" key={reaction.id}>{reaction.emoji}</div>
-      ))}
+    <section className={['table-seat', `table-seat--${position}`, isCurrent ? 'is-current' : '', position === 'left' || position === 'right' ? 'is-side-seat' : '', isPeekTarget ? 'is-peek-target' : ''].filter(Boolean).join(' ')}>
+      <div className="table-seat-name"><strong>{player.nickname}</strong><span>{player.handSize}</span></div>
+      {recentChat && <div className="player-chat-bubble">{recentChat}</div>}
+      {reactions.map(r => <div className="reaction-pop" key={r.id}>{r.emoji}</div>)}
       <div className="table-seat-cards">
         {Array.from({ length: player.handSize }, (_, index) => {
           const revealed = reveals[revealKey(player.id, index)]?.card;
-          return <CardImage cardId={revealed?.id} hidden={!revealed} key={`${player.id}-${index}`} onClick={() => onCardClick(player.id, index)} selectable size="small" />;
+          const hasPeek = peekMarkers.some(m => m.index === index);
+          const peekerName = peekMarkers.find(m => m.index === index)?.peekerName;
+          return (
+            <div key={index} className="card-slot-wrap">
+              <CardImage cardId={revealed?.id} hidden={!revealed} onClick={() => onCardClick(player.id, index)} selectable size="small" />
+              {hasPeek && <div className="peek-eye-badge" title={peekerName ? `${peekerName} saw this card` : 'Seen card'}><Eye size={13} /></div>}
+            </div>
+          );
         })}
       </div>
-      {!player.connected ? <em>{t('reserved')}</em> : null}
+      {!player.connected && <em>{t('reserved')}</em>}
     </section>
   );
 }
 
+/* ── Helpers ── */
 function seatPosition(index: number, count: number): string {
-  const layouts: Record<number, string[]> = {
-    1: ['top'],
-    2: ['left', 'right'],
-    3: ['top', 'left', 'right'],
-    4: ['top-left', 'top-right', 'left', 'right'],
-    5: ['top-left', 'top', 'top-right', 'left', 'right']
-  };
+  const layouts: Record<number, string[]> = { 1:['top'], 2:['left','right'], 3:['top','left','right'], 4:['top-left','top-right','left','right'], 5:['top-left','top','top-right','left','right'] };
   return (layouts[count] ?? layouts[5])[index] ?? 'top';
 }
-
-function getActionReason(card: PublicCard, source: 'deck' | 'ground' | null, canAct: boolean, _game: PublicGameState, t: TFunction): string | null {
-  if (source !== 'deck') {
-    return 'This card only works when drawn from deck.';
-  }
-  if (card.effectType === 'none') {
-    return 'This card has no action.';
-  }
-  if (card.effectType === 'thief') {
-    return t('thiefDisabled');
-  }
-  if (!canAct) {
-    return 'This action is not allowed now.';
-  }
-  return null;
-}
-
-function formatTime(totalSeconds: number): string {
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-}
-
-function phaseTitle(phase: string, isMyTurn: boolean, t: TFunction): string {
-  if (phase === 'initialPeek') {
-    return t('chooseCard');
-  }
-  if (phase === 'paused') {
-    return t('waiting');
-  }
-  if (phase === 'roundEnded') {
-    return t('scoreboard');
-  }
+function phaseTitle(phase: string, isMyTurn: boolean, t: TFunction) {
+  if (phase === 'initialPeek') return t('chooseCard');
+  if (phase === 'paused') return t('waiting');
+  if (phase === 'roundEnded') return t('scoreboard');
   return isMyTurn ? t('yourTurn') : t('turn');
 }
-
-function handHint(
-  phase: string,
-  privateState: PrivatePlayerState,
-  prompt: ActionPrompt | null,
-  handMode: HandMode,
-  canDraw: boolean,
-  canTakeGround: boolean,
-  isTurnTransitioning: boolean,
-  t: TFunction
-): string {
-  if (phase === 'initialPeek' && privateState.needsInitialPeek) {
-    return `${t('chooseCard')} x2`;
-  }
-  if (isTurnTransitioning) {
-    return t('nextTurn');
-  }
-  if (privateState.drawnCardSource === 'ground') {
-    return `${t('chooseCard')} - ${t('takeFromGround')}`;
-  }
-  if (privateState.drawnCard) {
-    return `${t('keep')} / ${t('discard')} / ${t('useAction')}`;
-  }
-  if (handMode === 'keep') {
-    return `${t('chooseCard')} - ${t('keep')}`;
-  }
-  if (handMode === 'match') {
-    return t('chooseCard');
-  }
-  if (prompt) {
-    return prompt.message;
-  }
+function handHint(phase: string, ps: PrivatePlayerState, prompt: ActionPrompt | null, handMode: HandMode, canDraw: boolean, canTakeGround: boolean, isTT: boolean, t: TFunction) {
+  if (phase === 'initialPeek' && ps.needsInitialPeek) return `${t('chooseCard')} x2`;
+  if (isTT) return t('nextTurn');
+  if (ps.drawnCardSource === 'ground') return `${t('chooseCard')} ← ${t('takeFromGround')}`;
+  if (ps.drawnCardSource === 'deck' && ps.drawnCard?.effectType !== 'none') return t('useAction');
+  if (ps.drawnCard) return `${t('keep')} / ${t('discard')} / ${t('useAction')}`;
+  if (handMode === 'keep') return `${t('chooseCard')} ← ${t('keep')}`;
+  if (prompt) return prompt.message;
   return canDraw || canTakeGround ? `${t('drawFromDeck')} / ${t('takeFromGround')}` : t('waiting');
 }

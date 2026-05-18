@@ -31,7 +31,7 @@ describe('Screw game engine', () => {
 
   it('does not start with less than 2 or more than 6 players', () => {
     const room = createRoom(1);
-    expect(() => games.startGame(room.code, room.hostId)).toThrow(/2 to 6/);
+    expect(() => games.startGame(room.code, room.hostId)).toThrow();
 
     const fullRoom = createRoom(6);
     expect(() => rooms.joinRoom(fullRoom.code, 'Seven', 's7')).toThrow(/full/);
@@ -180,10 +180,10 @@ describe('Screw game engine', () => {
     expect(new Set(result.reveals?.map((reveal) => reveal.ownerId)).size).toBe(room.players.length - 1);
   });
 
-  it('unlocks Screw after 600 seconds', () => {
+  it('keeps Screw unlocked from the start', () => {
     const room = startReadyRound(4, 10_000);
-    expect(TurnService.isScrewUnlocked(room, 10_000 + 599_000)).toBe(false);
-    expect(TurnService.isScrewUnlocked(room, 10_000 + 600_000)).toBe(true);
+    expect(TurnService.isScrewUnlocked(room, 10_000)).toBe(true);
+    expect(TurnService.isScrewUnlocked(room, 10_001)).toBe(true);
   });
 
   it('queues a bracket reset once a player banks five cumulative round trophies', () => {
@@ -199,13 +199,13 @@ describe('Screw game engine', () => {
     expect(room.pendingMatchReset).toBe(true);
   });
 
-  it('skips and warns a player after turn timeout', () => {
+  it('does not skip or warn a player after turn timeout handling', () => {
     const room = startReadyRound(2, 1000);
     const player = TurnService.currentPlayerId(room)!;
     room.game!.turnExpiresAt = 1000;
     const result = games.handleTurnTimeout(room.code, player, 2000);
-    expect(room.players.find((candidate) => candidate.id === player)?.warningCount).toBe(1);
-    expect(TurnService.currentPlayerId(room)).not.toBe(player);
+    expect(room.players.find((candidate) => candidate.id === player)?.warningCount).toBe(0);
+    expect(TurnService.currentPlayerId(room)).toBe(player);
     expect(result.room.game!.phase).toBe('playing');
   });
 
@@ -218,7 +218,7 @@ describe('Screw game engine', () => {
     expect(score.total).toBe(20);
   });
 
-  it('warns before punishing a wrong match discard guess', () => {
+  it('ignores a wrong match discard guess without warnings or penalties', () => {
     const room = startReadyRound();
     const player = room.players[0].id;
     room.game!.discardPile = [card('card_5')];
@@ -226,11 +226,11 @@ describe('Screw game engine', () => {
 
     games.matchDiscard(room.code, player, 0);
 
-    expect(room.players[0].warningCount).toBe(1);
+    expect(room.players[0].warningCount).toBe(0);
     expect(room.players[0].penaltyPoints).toBe(0);
     games.matchDiscard(room.code, player, 0);
-    expect(room.players[0].warningCount).toBe(2);
-    expect(room.players[0].penaltyPoints).toBe(10);
+    expect(room.players[0].warningCount).toBe(0);
+    expect(room.players[0].penaltyPoints).toBe(0);
     expect(room.game!.playerStates[player].hand).toHaveLength(4);
   });
 

@@ -46,13 +46,7 @@ export function LobbyScreen({
   }, [room?.roomCode]);
 
   const canStart = Boolean(identity && room && room.hostId === identity.playerId && room.players.length >= room.minPlayers && room.players.length <= room.maxPlayers);
-  const canFillBots = Boolean(
-    identity &&
-      room &&
-      room.hostId === identity.playerId &&
-      room.phase === 'lobby' &&
-      room.players.length < Math.min(room.botPrefillTarget, room.maxPlayers)
-  );
+  const canFillBots = Boolean(identity && room && room.hostId === identity.playerId && room.phase === 'lobby' && room.players.length < room.minPlayers);
   const canRejoin = roomCode && savedPlayerId && savedRoomCode === roomCode.toUpperCase();
 
   function createRoom() {

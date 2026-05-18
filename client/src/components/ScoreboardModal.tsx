@@ -1,5 +1,5 @@
 import { Trophy, X } from 'lucide-react';
-import type { RoundEndedPayload } from '../../../shared/types';
+import type { MatchStandingLine, RoundEndedPayload } from '../../../shared/types';
 import type { TFunction } from '../i18n';
 import { CardImage } from './CardImage';
 
@@ -17,57 +17,60 @@ export function ScoreboardModal({ payload, onClose, onRestart, canRestart, t }: 
   }
 
   const winner = payload.scores.find((score) => score.playerId === payload.winnerId);
-  const champ = payload.matchWinnerId ? payload.matchStanding?.find((line) => line.playerId === payload.matchWinnerId) : undefined;
-  const raceLine =
-    typeof payload.roundsToWin === 'number' ? t('raceToNWins').replace('{n}', String(payload.roundsToWin)) : null;
+  const champ = payload.matchWinnerId
+    ? payload.matchStanding?.find((line) => line.playerId === payload.matchWinnerId)
+    : undefined;
+
+  const gamesPlayed = payload.matchGamesPlayed ?? 1;
+  const gamesTotal = payload.gamesPerMatch ?? 5;
+  const isMatchOver = Boolean(payload.matchWinnerId);
+  const raceLine = t('raceToNWins').replace('{n}', String(gamesTotal));
 
   return (
     <div className="modal-shell" role="dialog" aria-modal="true">
       <div className="score-modal">
+        {/* ── Header ── */}
         <div className="modal-header">
           <div>
-            <p className="eyebrow">{t('roundComplete')}</p>
+            <p className="eyebrow">
+              {t('game')} {gamesPlayed} / {gamesTotal} — {t('roundComplete')}
+            </p>
             <h2>
-              <Trophy size={26} /> {t('winner')}: {winner?.nickname ?? t('winner')}
+              <Trophy size={24} /> {t('winner')}: {winner?.nickname ?? t('winner')}
             </h2>
-            {payload.matchWinnerId && champ ? (
+            {isMatchOver && champ ? (
               <p className="score-match-banner">
-                <Trophy size={18} /> {t('matchChampion')}: {champ.nickname}
+                🏆 {t('matchChampion')}: {champ.nickname}
               </p>
             ) : null}
-            {raceLine ? <p className="score-race-caption">{raceLine}</p> : null}
+            <p className="score-race-caption">{raceLine}</p>
           </div>
           <button className="icon-button" type="button" onClick={onClose} aria-label="Close scoreboard">
             <X size={20} />
           </button>
         </div>
 
+        {/* ── Match standings table (cumulative points) ── */}
         {payload.matchStanding && payload.matchStanding.length > 0 ? (
-          <div className="match-standings">
-            <p className="eyebrow">{t('matchStandings')}</p>
-            <ol className="match-standings__list">
-              {payload.matchStanding.map((line) => (
-                <li key={line.playerId}>
-                  <span>{line.nickname}</span>
-                  <strong>{line.wins}</strong>
-                </li>
-              ))}
-            </ol>
-          </div>
+          <MatchTable standing={payload.matchStanding} gamesPlayed={gamesPlayed} t={t} />
         ) : null}
 
+        {/* ── This round's card breakdown ── */}
         <div className="score-grid">
           {payload.scores
             .slice()
             .sort((a, b) => a.total - b.total)
             .map((score) => (
-              <section className={score.isWinner ? 'score-line is-winner' : 'score-line'} key={score.playerId}>
+              <section
+                className={score.isWinner ? 'score-line is-winner' : 'score-line'}
+                key={score.playerId}
+              >
                 <div className="score-line__top">
                   <strong>{score.nickname}</strong>
                   <span>{score.total} pts</span>
                 </div>
                 <div className="score-line__meta">
-                  {score.isScrewCaller ? 'Screw caller' : 'Player'} · {t('stats')}: {score.cards.length} cards
+                  {score.isScrewCaller ? 'Screw caller' : 'Player'}
                   {score.penaltyPoints ? ` · +${score.penaltyPoints} penalty` : ''}
                   {score.warningCount ? ` · ${score.warningCount} ${t('warnings')}` : ''}
                 </div>
@@ -80,12 +83,64 @@ export function ScoreboardModal({ payload, onClose, onRestart, canRestart, t }: 
             ))}
         </div>
 
+        {/* ── Actions ── */}
         <div className="modal-actions">
           <button className="primary-button" type="button" onClick={onRestart} disabled={!canRestart}>
-            {t('playAgain')}
+            {isMatchOver ? `🔄 ${t('playAgain')}` : `▶ ${t('game')} ${gamesPlayed + 1}`}
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ─── Match standings table component ──────────────────────────── */
+function MatchTable({
+  standing,
+  gamesPlayed,
+  t,
+}: {
+  standing: MatchStandingLine[];
+  gamesPlayed: number;
+  t: TFunction;
+}) {
+  return (
+    <div className="match-standings">
+      <p className="eyebrow">{t('matchStandings')}</p>
+      <table className="match-table">
+        <thead>
+          <tr>
+            <th>{t('players')}</th>
+            {Array.from({ length: gamesPlayed }, (_, i) => (
+              <th key={i}>G{i + 1}</th>
+            ))}
+            <th>{t('matchTotal')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {standing.map((line, rank) => (
+            <tr key={line.playerId} className={rank === 0 ? 'match-table__leader' : ''}>
+              <td className="match-table__name">
+                {rank === 0 ? '👑 ' : `${rank + 1}. `}
+                {line.nickname}
+              </td>
+              {line.gamePoints.map((pts, i) => (
+                <td
+                  key={i}
+                  className={pts === Math.min(...standing.map((s) => s.gamePoints[i] ?? 999)) ? 'match-table__best' : ''}
+                >
+                  {pts}
+                </td>
+              ))}
+              {/* Fill empty cells if some players have fewer entries */}
+              {Array.from({ length: gamesPlayed - line.gamePoints.length }, (_, i) => (
+                <td key={`empty-${i}`}>—</td>
+              ))}
+              <td className="match-table__total">{line.points}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

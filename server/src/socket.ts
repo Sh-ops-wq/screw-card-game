@@ -4,7 +4,6 @@ import { BotService } from './game/BotService';
 import { GameManager, type EngineResult } from './game/GameManager';
 import { RoomManager } from './game/RoomManager';
 import { VisibilityService } from './game/VisibilityService';
-import { TurnService } from './game/TurnService';
 import type { ChatMessage, EmojiReaction } from '../../shared/types';
 import type { GameRoom, ServerPlayer } from './game/Types';
 
@@ -16,7 +15,6 @@ interface ClientSession {
 const roomManager = new RoomManager();
 const gameManager = new GameManager(roomManager);
 const botService = new BotService(roomManager, gameManager);
-const turnTimeouts = new Map<string, NodeJS.Timeout>();
 const allowedReactions = new Set(['🔥', '😂', '😈', '🧠', '👏', '💀', '👀', '⚡']);
 
 export function registerSockets(io: Server): void {
@@ -231,34 +229,7 @@ function emitResult(io: Server, result: EngineResult, actorId?: string, actorSoc
     io.to(room.code).emit('roundEnded', result.roundEnded);
   }
 
-  scheduleTurnTimeout(io, room);
   botService.schedule(room.code, (botResult, botActorId) => emitResult(io, botResult, botActorId));
-}
-
-function scheduleTurnTimeout(io: Server, room: GameRoom): void {
-  const existing = turnTimeouts.get(room.code);
-  if (existing) {
-    clearTimeout(existing);
-    turnTimeouts.delete(room.code);
-  }
-
-  const game = room.game;
-  const currentPlayerId = game ? TurnService.currentPlayerId(room) : undefined;
-  if (!game || !currentPlayerId || game.phase === 'roundEnded' || game.phase === 'paused' || game.phase === 'lobby') {
-    return;
-  }
-
-  const delay = Math.max(250, game.turnExpiresAt - Date.now() + 200);
-  const timer = setTimeout(() => {
-    turnTimeouts.delete(room.code);
-    try {
-      const result = gameManager.handleTurnTimeout(room.code, currentPlayerId);
-      emitResult(io, result, currentPlayerId);
-    } catch {
-      // Timeouts are a safety net; never crash the socket server from one.
-    }
-  }, delay);
-  turnTimeouts.set(room.code, timer);
 }
 
 function requireSession(socket: Socket): ClientSession {
